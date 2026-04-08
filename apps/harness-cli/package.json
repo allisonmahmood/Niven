@@ -1,0 +1,25 @@
+{
+  "name": "@niven/harness-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --build tsconfig.json",
+    "test": "vitest run",
+    "login": "tsc --build tsconfig.json && node dist/index.js login",
+    "prompt": "tsc --build tsconfig.json && node dist/index.js prompt"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "0.65.2",
+    "@mariozechner/pi-coding-agent": "0.65.2"
+  },
+  "devDependencies": {
+    "tsx": "4.21.0",
+    "vitest": "4.1.3"
+  }
+}

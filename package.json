@@ -12,7 +12,9 @@
     "check": "biome check .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
-    "verify:env": "node scripts/verify-env.mjs"
+    "verify:env": "node scripts/verify-env.mjs",
+    "harness:login": "pnpm --filter @niven/harness-cli login",
+    "harness:prompt": "pnpm --filter @niven/harness-cli prompt"
   },
   "lint-staged": {
     "*.{js,ts,mjs,cjs,jsx,tsx,json,jsonc}": [
