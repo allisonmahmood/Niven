@@ -1,0 +1,40 @@
+{
+  "name": "@niven/plaid-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./env": {
+      "types": "./dist/env.d.ts",
+      "default": "./dist/env.js"
+    },
+    "./sandbox": {
+      "types": "./dist/sandbox.d.ts",
+      "default": "./dist/sandbox.js"
+    },
+    "./items": {
+      "types": "./dist/items.d.ts",
+      "default": "./dist/items.js"
+    },
+    "./investments": {
+      "types": "./dist/investments.d.ts",
+      "default": "./dist/investments.js"
+    },
+    "./transactions": {
+      "types": "./dist/transactions.d.ts",
+      "default": "./dist/transactions.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --build tsconfig.json"
+  },
+  "dependencies": {
+    "@niven/shared": "workspace:*"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "niven",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "verify:env": "node scripts/verify-env.mjs"
+  },
+  "lint-staged": {
+    "*.{js,ts,mjs,cjs,jsx,tsx,json,jsonc}": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.10",
+    "@types/node": "25.5.2",
+    "husky": "9.1.7",
+    "lint-staged": "16.4.0",
+    "typescript": "6.0.2"
+  }
+}

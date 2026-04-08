@@ -1,0 +1,34 @@
+{
+  "name": "@niven/wealth-tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "default": "./dist/tools/index.js"
+    },
+    "./services": {
+      "types": "./dist/services/index.d.ts",
+      "default": "./dist/services/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "default": "./dist/schemas/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --build tsconfig.json"
+  },
+  "dependencies": {
+    "@niven/plaid-client": "workspace:*",
+    "@niven/shared": "workspace:*",
+    "@sinclair/typebox": "0.34.49"
+  }
+}
