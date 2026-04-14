@@ -5,25 +5,26 @@ import * as readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import { loginOpenAICodex } from "@mariozechner/pi-ai/oauth";
-import {
-  AuthStorage,
-  createAgentSession,
-  getAgentDir,
-  SessionManager,
-} from "@mariozechner/pi-coding-agent";
+import { AuthStorage, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 
 import { createHarnessCli, openBrowser } from "./harness.js";
+import { WealthApiClient } from "./wealthApiClient.js";
+import { createWealthAgentSession, getWealthHarnessPaths } from "./wealthSession.js";
 
-const agentDir = getAgentDir();
-const authPath = path.join(agentDir, "auth.json");
-const authStorage = AuthStorage.create(authPath);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
+const { agentDir, authPath, sessionCwd } = getWealthHarnessPaths(repoRoot);
+const authStorage = AuthStorage.create(authPath);
+const wealthApiClient = new WealthApiClient({
+  baseUrl: process.env.NIVEN_WEALTH_API_URL ?? "http://127.0.0.1:4321",
+  ...(process.env.NIVEN_API_TOKEN ? { apiToken: process.env.NIVEN_API_TOKEN } : {}),
+});
 
 const app = createHarnessCli({
   agentDir,
   authPath,
   repoRoot,
+  sessionCwd,
   stdin: input,
   stdout: output,
   stderr: errorOutput,
@@ -39,12 +40,17 @@ const app = createHarnessCli({
   openBrowser,
   login: loginOpenAICodex,
   authStorage,
-  createSession(options) {
-    return createAgentSession({
+  async createSession(options) {
+    mkdirSync(agentDir, { recursive: true });
+    mkdirSync(sessionCwd, { recursive: true });
+
+    return createWealthAgentSession({
+      agentDir,
+      client: wealthApiClient,
       cwd: options.cwd,
       authStorage,
       sessionManager: options.sessionManager as SessionManager,
-      tools: options.tools,
+      settingsManager: SettingsManager.inMemory(),
     });
   },
   createInMemorySessionManager: SessionManager.inMemory,

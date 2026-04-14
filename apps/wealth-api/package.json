@@ -7,15 +7,17 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc --build tsconfig.json",
-    "dev": "pnpm exec tsx src/index.ts",
-    "start": "tsc --build tsconfig.json && node dist/index.js",
+    "dev": "node --env-file-if-exists=../../.env --import tsx src/index.ts",
+    "sandbox:bootstrap": "pnpm run sandbox:reset-from-plaid",
+    "sandbox:reset-from-plaid": "tsc --build tsconfig.json && node --env-file-if-exists=../../.env dist/bootstrapCli.js",
+    "start": "tsc --build tsconfig.json && node --env-file-if-exists=../../.env dist/index.js",
     "typecheck": "tsc --build tsconfig.json",
     "test": "pnpm exec vitest run tests"
   },
   "dependencies": {
     "@hono/node-server": "1.19.14",
     "@niven/shared": "workspace:*",
-    "@niven/wealth-tools": "workspace:*",
+    "@niven/wealth-sandbox": "workspace:*",
     "hono": "4.12.12"
   }
 }

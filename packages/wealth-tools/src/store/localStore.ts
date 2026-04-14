@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RemovedTransaction, Transaction } from "@niven/plaid-client";
 import { NotFoundError } from "@niven/shared";
@@ -67,6 +67,7 @@ function idempotencyStorageKey(operation: string, scope: string, idempotencyKey:
 
 export class LocalWealthStore {
   private state: WealthStoreDocument | null = null;
+  private stateMtimeMs: number | null = null;
   private writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly filePath: string) {}
@@ -246,7 +247,15 @@ export class LocalWealthStore {
   }
 
   private async readStateInternal(): Promise<WealthStoreDocument> {
-    if (this.state) {
+    const currentMtimeMs = await this.readFileMtimeMs();
+
+    if (
+      this.state &&
+      ((this.stateMtimeMs === null && currentMtimeMs === null) ||
+        (this.stateMtimeMs !== null &&
+          currentMtimeMs !== null &&
+          this.stateMtimeMs === currentMtimeMs))
+    ) {
       return this.state;
     }
 
@@ -254,6 +263,7 @@ export class LocalWealthStore {
       const raw = await readFile(this.filePath, "utf8");
       this.state =
         raw.trim().length > 0 ? (JSON.parse(raw) as WealthStoreDocument) : createDefaultState();
+      this.stateMtimeMs = await this.readFileMtimeMs();
     } catch (error) {
       const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
 
@@ -271,5 +281,21 @@ export class LocalWealthStore {
   private async persistState(state: WealthStoreDocument): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    this.state = state;
+    this.stateMtimeMs = await this.readFileMtimeMs();
+  }
+
+  private async readFileMtimeMs(): Promise<number | null> {
+    try {
+      return (await stat(this.filePath)).mtimeMs;
+    } catch (error) {
+      const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
+
+      if (missing) {
+        return null;
+      }
+
+      throw error;
+    }
   }
 }

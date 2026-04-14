@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 
+import { clearExplicitApprovalOverride, setExplicitApprovalOverride } from "./approval.js";
+
 export const OPENAI_CODEX_PROVIDER = "openai-codex";
 
 export interface OutputStream {
@@ -75,10 +77,15 @@ export interface CreateSessionOptions {
   tools: [];
 }
 
+export interface PromptAwareSessionManager {
+  appendMessage(message: { content: string; role: "user"; timestamp: number }): void;
+}
+
 export interface HarnessDeps {
   agentDir: string;
   authPath: string;
   repoRoot: string;
+  sessionCwd: string;
   stdin: InputStream;
   stdout: OutputStream;
   stderr: OutputStream;
@@ -110,6 +117,19 @@ export interface AssistantTextMessageLike {
   >;
 }
 
+function hasAppendMessage(value: unknown): value is PromptAwareSessionManager {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "appendMessage" in value &&
+    typeof value.appendMessage === "function"
+  );
+}
+
+function startsWithApproval(prompt: string): boolean {
+  return prompt.trim().toUpperCase().startsWith("APPROVE:");
+}
+
 export function writeLine(stream: OutputStream, message: string): void {
   stream.write(`${message}\n`);
 }
@@ -117,6 +137,7 @@ export function writeLine(stream: OutputStream, message: string): void {
 export function printUsage(stderr: OutputStream): void {
   writeLine(stderr, "Usage:");
   writeLine(stderr, "  pnpm harness:login");
+  writeLine(stderr, "  pnpm harness:chat");
   writeLine(stderr, '  pnpm harness:prompt -- "your prompt"');
   writeLine(stderr, '  printf "your prompt" | pnpm harness:prompt');
 }
@@ -169,7 +190,8 @@ export function getCommand(argv: readonly string[]): string | undefined {
 }
 
 export function getCommandArgs(argv: readonly string[]): readonly string[] {
-  return argv.slice(3);
+  const args = argv.slice(3);
+  return args[0] === "--" ? args.slice(1) : args;
 }
 
 export async function readPromptFromInput(
@@ -222,6 +244,92 @@ export function getAssistantText(message: AssistantTextMessageLike): string {
 }
 
 export function createHarnessCli(deps: HarnessDeps) {
+  function requireOAuthCredential(): boolean {
+    const credential = deps.authStorage.get(OPENAI_CODEX_PROVIDER);
+
+    if (credential?.type === "oauth") {
+      return true;
+    }
+
+    writeLine(deps.stderr, "OpenAI Codex OAuth is not set up yet.");
+    writeLine(deps.stderr, "Run `pnpm harness:login` first.");
+    writeLine(deps.stderr, `Credentials are stored at ${deps.authPath}.`);
+    return false;
+  }
+
+  async function createPromptSession(): Promise<{
+    readonly session: HarnessSession;
+    readonly sessionManager: unknown;
+  }> {
+    const sessionManager = deps.createInMemorySessionManager(deps.sessionCwd);
+    const { session } = await deps.createSession({
+      cwd: deps.sessionCwd,
+      authStorage: deps.authStorage,
+      sessionManager,
+      tools: [],
+    });
+
+    return {
+      session,
+      sessionManager,
+    };
+  }
+
+  async function runSessionPrompt(
+    session: HarnessSession,
+    prompt: string,
+    sessionManager?: unknown,
+  ): Promise<void> {
+    let streamedOutput = "";
+    let wroteStream = false;
+
+    const unsubscribe = session.subscribe((event) => {
+      if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+        wroteStream = true;
+        streamedOutput += event.assistantMessageEvent.delta ?? "";
+        deps.stdout.write(event.assistantMessageEvent.delta ?? "");
+      }
+    });
+
+    try {
+      if (startsWithApproval(prompt)) {
+        setExplicitApprovalOverride(prompt);
+
+        if (hasAppendMessage(sessionManager)) {
+          sessionManager.appendMessage({
+            content: prompt,
+            role: "user",
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      await session.prompt(prompt);
+
+      if (!wroteStream) {
+        const lastAssistantMessage = [...session.messages].reverse().find(isAssistantMessage);
+        const text = lastAssistantMessage ? getAssistantText(lastAssistantMessage) : "";
+
+        if (text) {
+          deps.stdout.write(text);
+          streamedOutput = text;
+        }
+      }
+    } finally {
+      clearExplicitApprovalOverride();
+      unsubscribe();
+    }
+
+    if (streamedOutput && !streamedOutput.endsWith("\n")) {
+      deps.stdout.write("\n");
+    }
+  }
+
+  function isExitCommand(value: string): boolean {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "exit" || normalized === "quit" || normalized === "/exit";
+  }
+
   async function runLogin(): Promise<number> {
     deps.mkdir(deps.agentDir);
 
@@ -276,53 +384,17 @@ export function createHarnessCli(deps: HarnessDeps) {
       return 1;
     }
 
-    const credential = deps.authStorage.get(OPENAI_CODEX_PROVIDER);
-
-    if (credential?.type !== "oauth") {
-      writeLine(deps.stderr, "OpenAI Codex OAuth is not set up yet.");
-      writeLine(deps.stderr, "Run `pnpm harness:login` first.");
-      writeLine(deps.stderr, `Credentials are stored at ${deps.authPath}.`);
+    if (!requireOAuthCredential()) {
       return 1;
     }
 
     try {
-      const { session } = await deps.createSession({
-        cwd: deps.repoRoot,
-        authStorage: deps.authStorage,
-        sessionManager: deps.createInMemorySessionManager(deps.repoRoot),
-        tools: [],
-      });
-
-      let streamedOutput = "";
-      let wroteStream = false;
-
-      const unsubscribe = session.subscribe((event) => {
-        if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-          wroteStream = true;
-          streamedOutput += event.assistantMessageEvent.delta ?? "";
-          deps.stdout.write(event.assistantMessageEvent.delta ?? "");
-        }
-      });
+      const { session, sessionManager } = await createPromptSession();
 
       try {
-        await session.prompt(prompt);
-
-        if (!wroteStream) {
-          const lastAssistantMessage = [...session.messages].reverse().find(isAssistantMessage);
-          const text = lastAssistantMessage ? getAssistantText(lastAssistantMessage) : "";
-
-          if (text) {
-            deps.stdout.write(text);
-            streamedOutput = text;
-          }
-        }
+        await runSessionPrompt(session, prompt, sessionManager);
       } finally {
-        unsubscribe();
         session.dispose();
-      }
-
-      if (streamedOutput && !streamedOutput.endsWith("\n")) {
-        deps.stdout.write("\n");
       }
 
       return 0;
@@ -336,6 +408,54 @@ export function createHarnessCli(deps: HarnessDeps) {
     }
   }
 
+  async function runChat(): Promise<number> {
+    if (!requireOAuthCredential()) {
+      return 1;
+    }
+
+    const prompter = deps.createPrompter();
+
+    try {
+      const { session, sessionManager } = await createPromptSession();
+      writeLine(deps.stderr, "Interactive wealth chat started. Type `/exit` to quit.");
+
+      try {
+        while (true) {
+          let prompt: string;
+
+          try {
+            prompt = (await prompter.question("wealth> ")).trim();
+          } catch {
+            break;
+          }
+
+          if (!prompt) {
+            continue;
+          }
+
+          if (isExitCommand(prompt)) {
+            break;
+          }
+
+          await runSessionPrompt(session, prompt, sessionManager);
+        }
+      } finally {
+        session.dispose();
+      }
+
+      return 0;
+    } catch (error) {
+      writeLine(deps.stderr, `Chat failed: ${formatError(error)}`);
+      writeLine(
+        deps.stderr,
+        "If your OpenAI Codex OAuth session expired, rerun `pnpm harness:login`.",
+      );
+      return 1;
+    } finally {
+      prompter.close();
+    }
+  }
+
   async function main(argv: readonly string[]): Promise<number> {
     const command = getCommand(argv);
     const args = getCommandArgs(argv);
@@ -344,6 +464,8 @@ export function createHarnessCli(deps: HarnessDeps) {
       switch (command) {
         case "login":
           return runLogin();
+        case "chat":
+          return runChat();
         case "prompt":
           return runPrompt(args);
         default:
@@ -357,6 +479,7 @@ export function createHarnessCli(deps: HarnessDeps) {
   }
 
   return {
+    runChat,
     main,
     runLogin,
     runPrompt,
