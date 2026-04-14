@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./Niven-logo.png" alt="Niven logo" width="160" />
+</p>
+
 # Niven
 
 ## Quick Start
@@ -59,6 +63,12 @@ At that point you can ask things like:
 In the custom sandbox, direct cash transfers are allowed between transfer-eligible accounts, including investment accounts that maintain a cash balance.
 
 Customize Niven's personality in [apps/harness-cli/SOUL.md](apps/harness-cli/SOUL.md).
+
+## Branding
+
+- `Niven-logo.png` is the square source logo used in the repository README.
+- `assets/github-social-preview.jpg` is a GitHub-friendly social preview image (`1280x640`, under `1 MB`).
+- To make GitHub use the social preview, upload [assets/github-social-preview.jpg](assets/github-social-preview.jpg) in `Settings -> General -> Social preview`.
 
 ## Notes
 
