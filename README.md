@@ -56,6 +56,8 @@ At that point you can ask things like:
 - `preview moving 5.00 from account <from_account_id> to account <to_account_id>`
 - `APPROVE: move 5.00 from account <from_account_id> to account <to_account_id>`
 
+In the custom sandbox, direct cash transfers are allowed between transfer-eligible accounts, including investment accounts that maintain a cash balance.
+
 Customize Niven's personality in [apps/harness-cli/SOUL.md](apps/harness-cli/SOUL.md).
 
 ## Notes

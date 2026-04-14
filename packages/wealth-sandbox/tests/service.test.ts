@@ -108,7 +108,7 @@ function createBaseState(): SandboxState {
         officialName: "Brokerage",
         permissions: {
           canTrade: true,
-          canTransfer: false,
+          canTransfer: true,
         },
         plaidAccountId: "plaid_brokerage",
         sourceLabel: "seed",
@@ -241,6 +241,48 @@ describe("wealth sandbox service", () => {
 
     expect(checking).toEqual(expect.objectContaining({ currentBalance: "75.00" }));
     expect(savings).toEqual(expect.objectContaining({ currentBalance: "50.00" }));
+  });
+
+  it("allows internal cash transfers into and out of investment accounts", async () => {
+    const { service } = await createHarness();
+
+    const intoBrokerage = await service.transferCash({
+      amount: "25.00",
+      control: {
+        approval: {
+          approved: true,
+        },
+        idempotencyKey: "transfer-into-brokerage",
+      },
+      fromAccountId: "checking",
+      toAccountId: "brokerage",
+    });
+
+    expect(intoBrokerage.mode).toBe("live");
+
+    let brokerage = await service.getAccount("brokerage");
+    expect((brokerage.account as Record<string, unknown>).cashBalance).toBe("525.00");
+    expect((brokerage.account as Record<string, unknown>).currentBalance).toBe("725.00");
+
+    const outOfBrokerage = await service.transferCash({
+      amount: "20.00",
+      control: {
+        approval: {
+          approved: true,
+        },
+        idempotencyKey: "transfer-out-of-brokerage",
+      },
+      fromAccountId: "brokerage",
+      toAccountId: "savings",
+    });
+
+    expect(outOfBrokerage.mode).toBe("live");
+
+    brokerage = await service.getAccount("brokerage");
+    const savings = await service.getAccount("savings");
+    expect((brokerage.account as Record<string, unknown>).cashBalance).toBe("505.00");
+    expect((brokerage.account as Record<string, unknown>).currentBalance).toBe("705.00");
+    expect((savings.account as Record<string, unknown>).currentBalance).toBe("45.00");
   });
 
   it("previews and executes external cash deposits into a checking account", async () => {
