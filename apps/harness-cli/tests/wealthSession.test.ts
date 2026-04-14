@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,9 +8,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { WealthApiClient } from "../src/wealthApiClient.js";
 import {
   buildWealthAgentSessionConfig,
+  buildWealthSystemPrompt,
+  composeWealthSystemPrompt,
   createWealthResourceLoader,
+  DEFAULT_WEALTH_SOUL_FALLBACK,
+  DEFAULT_WEALTH_SOUL_PATH,
   getWealthHarnessPaths,
-  WEALTH_SYSTEM_PROMPT,
+  loadWealthSoul,
+  WEALTH_POLICY_PROMPT,
 } from "../src/wealthSession.js";
 import { WEALTH_ALLOWED_TOOL_NAMES, WEALTH_FORBIDDEN_TOOL_NAMES } from "../src/wealthTools.js";
 
@@ -75,7 +81,50 @@ describe("wealth session resources", () => {
     expect(loader.getPrompts().prompts).toHaveLength(0);
     expect(loader.getThemes().themes).toHaveLength(0);
     expect(loader.getAgentsFiles().agentsFiles).toHaveLength(0);
-    expect(loader.getSystemPrompt()).toBe(WEALTH_SYSTEM_PROMPT);
+    expect(loader.getSystemPrompt()).toBe(buildWealthSystemPrompt());
+  });
+
+  it("injects soul guidance before the non-negotiable wealth policy", async () => {
+    const cwd = await createTempDir("niven-wealth-cwd-");
+    const agentDir = await createTempDir("niven-wealth-agent-");
+    const settingsManager = SettingsManager.inMemory();
+    const soulPath = path.join(cwd, "SOUL.md");
+    const customSoul = "# Niven\n\nBe playful, but do not break policy.";
+
+    await writeFile(soulPath, customSoul);
+
+    const loader = createWealthResourceLoader({
+      agentDir,
+      cwd,
+      settingsManager,
+      soulPath,
+    });
+
+    await loader.reload();
+
+    const prompt = loader.getSystemPrompt();
+
+    expect(prompt).toBe(composeWealthSystemPrompt(customSoul));
+    expect(prompt).toContain(customSoul);
+    expect(prompt).toContain(WEALTH_POLICY_PROMPT);
+    expect(prompt?.indexOf(customSoul)).toBeLessThan(
+      prompt?.indexOf("# Wealth Policy") ?? Infinity,
+    );
+  });
+
+  it("loads the checked-in default soul file", () => {
+    const soul = loadWealthSoul();
+    const checkedInSoul = readFileSync(DEFAULT_WEALTH_SOUL_PATH, "utf8").trim();
+
+    expect(DEFAULT_WEALTH_SOUL_PATH.endsWith(path.join("apps", "harness-cli", "SOUL.md"))).toBe(
+      true,
+    );
+    expect(soul).toBe(checkedInSoul);
+    expect(soul).toContain("You are Niven.");
+  });
+
+  it("falls back to the built-in soul when the file is missing", () => {
+    expect(loadWealthSoul("/tmp/does-not-exist-soul.md")).toBe(DEFAULT_WEALTH_SOUL_FALLBACK);
   });
 
   it("builds a session config with no built-in tools and only allowed wealth tools", async () => {

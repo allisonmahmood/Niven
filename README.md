@@ -37,7 +37,7 @@ pnpm sandbox:reset-from-plaid
 pnpm api:start
 ```
 
-6. Authenticate Pi once:
+6. Authenticate Niven once:
 
 ```bash
 pnpm harness:login
@@ -55,6 +55,8 @@ At that point you can ask things like:
 - `show me my holdings`
 - `preview moving 5.00 from account <from_account_id> to account <to_account_id>`
 - `APPROVE: move 5.00 from account <from_account_id> to account <to_account_id>`
+
+Customize Niven's personality in [apps/harness-cli/SOUL.md](apps/harness-cli/SOUL.md).
 
 ## Notes
 
