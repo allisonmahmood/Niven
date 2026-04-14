@@ -1,5 +1,5 @@
 <h1>
-  <img src="./Niven-logo.png" alt="Niven logo" width="160" />
+  <img src="./Niven-logo.png" alt="Niven logo" width="80" />
   Niven
 </h1>
 
