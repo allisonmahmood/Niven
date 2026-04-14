@@ -7,18 +7,21 @@
   },
   "scripts": {
     "prepare": "husky",
-    "lint": "biome lint .",
+    "lint": "biome lint --error-on-warnings .",
     "format": "biome format --write .",
-    "check": "biome check .",
+    "check": "biome check --error-on-warnings .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
+    "verify": "pnpm check && pnpm typecheck && pnpm test",
     "verify:env": "node --env-file-if-exists=.env scripts/verify-env.mjs",
+    "api:dev": "pnpm --filter @niven/wealth-api dev",
+    "api:start": "pnpm --filter @niven/wealth-api start",
     "harness:login": "pnpm --filter @niven/harness-cli login",
     "harness:prompt": "pnpm --filter @niven/harness-cli prompt"
   },
   "lint-staged": {
     "*.{js,ts,mjs,cjs,jsx,tsx,json,jsonc}": [
-      "biome check --write --no-errors-on-unmatched"
+      "biome check --write --error-on-warnings --no-errors-on-unmatched"
     ]
   },
   "devDependencies": {
@@ -26,6 +29,8 @@
     "@types/node": "25.5.2",
     "husky": "9.1.7",
     "lint-staged": "16.4.0",
-    "typescript": "6.0.2"
+    "tsx": "4.21.0",
+    "typescript": "6.0.2",
+    "vitest": "4.1.3"
   }
 }

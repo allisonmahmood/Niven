@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
     "./env": {
       "types": "./dist/env.d.ts",
       "default": "./dist/env.js"
@@ -29,10 +33,15 @@
     "./transactions": {
       "types": "./dist/transactions.d.ts",
       "default": "./dist/transactions.js"
+    },
+    "./transfers": {
+      "types": "./dist/transfers.d.ts",
+      "default": "./dist/transfers.js"
     }
   },
   "scripts": {
-    "typecheck": "tsc --build tsconfig.json"
+    "typecheck": "tsc --build tsconfig.json",
+    "test": "pnpm exec vitest run tests"
   },
   "dependencies": {
     "@niven/shared": "workspace:*",

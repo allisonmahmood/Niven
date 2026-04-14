@@ -162,6 +162,9 @@ plaid-pi-monorepo-build-sheet.md
 .pi/npm
 .pi/git
 
+# Local runtime state
+.niven/
+
 # Local secrets and token stores
 *.sqlite
 *.sqlite-shm

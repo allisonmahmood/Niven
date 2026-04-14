@@ -24,7 +24,8 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --build tsconfig.json"
+    "typecheck": "tsc --build tsconfig.json",
+    "test": "pnpm exec vitest run tests"
   },
   "dependencies": {
     "@niven/plaid-client": "workspace:*",

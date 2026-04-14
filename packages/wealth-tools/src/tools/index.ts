@@ -1,17 +1,22 @@
-import type { LinkedSandboxItem } from "@niven/plaid-client";
 import type { Result } from "@niven/shared";
 
+import { readWealthRuntimeConfig } from "../config.js";
+
 export interface WealthToolsStatus {
-  readonly ready: false;
-  readonly linkedItems: readonly Pick<LinkedSandboxItem, "itemId" | "institutionId">[];
+  readonly ready: true;
+  readonly requireMutationApproval: boolean;
+  readonly sandboxOnly: true;
 }
 
 export function getWealthToolsStatus(): Result<WealthToolsStatus> {
+  const runtime = readWealthRuntimeConfig();
+
   return {
     ok: true,
     value: {
-      ready: false,
-      linkedItems: [],
+      ready: true,
+      requireMutationApproval: runtime.requireMutationApproval,
+      sandboxOnly: true,
     },
   };
 }

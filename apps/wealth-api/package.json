@@ -1,0 +1,21 @@
+{
+  "name": "@niven/wealth-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build tsconfig.json",
+    "dev": "pnpm exec tsx src/index.ts",
+    "start": "tsc --build tsconfig.json && node dist/index.js",
+    "typecheck": "tsc --build tsconfig.json",
+    "test": "pnpm exec vitest run tests"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.19.14",
+    "@niven/shared": "workspace:*",
+    "@niven/wealth-tools": "workspace:*",
+    "hono": "4.12.12"
+  }
+}

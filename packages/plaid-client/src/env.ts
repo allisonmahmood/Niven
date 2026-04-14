@@ -1,30 +1,41 @@
-import { type EnvMap, readOptionalEnv } from "@niven/shared";
+import {
+  type EnvMap,
+  NivenError,
+  readCsvEnv,
+  readOptionalEnv,
+  readRequiredEnv,
+} from "@niven/shared";
 
 export interface PlaidClientEnv {
-  readonly clientId: string | undefined;
-  readonly secret: string | undefined;
-  readonly environment: string;
+  readonly clientId: string;
+  readonly secret: string;
+  readonly environment: PlaidEnvironmentName;
   readonly countryCodes: readonly string[];
   readonly products: readonly string[];
 }
 
-function parseCsv(value: string | undefined): readonly string[] {
-  if (!value) {
-    return [];
+export type PlaidEnvironmentName = "development" | "production" | "sandbox";
+
+function parseEnvironment(value: string | undefined): PlaidEnvironmentName {
+  const environment = value?.trim() || "sandbox";
+
+  if (environment === "development" || environment === "production" || environment === "sandbox") {
+    return environment;
   }
 
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+  throw new NivenError(`Unsupported Plaid environment: ${environment}`);
 }
 
-export function readPlaidClientEnv(env: EnvMap = process.env): PlaidClientEnv {
+export function readValidatedPlaidClientEnv(env: EnvMap = process.env): PlaidClientEnv {
   return {
-    clientId: readOptionalEnv("PLAID_CLIENT_ID", env),
-    secret: readOptionalEnv("PLAID_SECRET", env),
-    environment: readOptionalEnv("PLAID_ENV", env) ?? "sandbox",
-    countryCodes: parseCsv(readOptionalEnv("PLAID_COUNTRY_CODES", env) ?? "US"),
-    products: parseCsv(readOptionalEnv("PLAID_PRODUCTS", env)),
+    clientId: readRequiredEnv("PLAID_CLIENT_ID", env),
+    secret: readRequiredEnv("PLAID_SECRET", env),
+    environment: parseEnvironment(readOptionalEnv("PLAID_ENV", env)),
+    countryCodes: readCsvEnv("PLAID_COUNTRY_CODES", env).length
+      ? readCsvEnv("PLAID_COUNTRY_CODES", env)
+      : ["US"],
+    products: readCsvEnv("PLAID_PRODUCTS", env),
   };
 }
+
+export const readPlaidClientEnv = readValidatedPlaidClientEnv;

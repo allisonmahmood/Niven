@@ -15,4 +15,10 @@ if (missingKeys.length > 0) {
 }
 
 const plaidEnv = process.env.PLAID_ENV?.trim() || "sandbox";
+
+if (plaidEnv !== "sandbox") {
+  console.error("[verify-env] This build is sandbox-only. Set PLAID_ENV=sandbox.");
+  process.exit(1);
+}
+
 console.log(`[verify-env] Plaid environment looks good. PLAID_ENV=${plaidEnv}`);
