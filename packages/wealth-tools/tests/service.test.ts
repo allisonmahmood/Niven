@@ -241,6 +241,53 @@ describe("wealth service mutations", () => {
     expect(plaidClient.transferCreate).not.toHaveBeenCalled();
   });
 
+  it("accepts valid ISO calendar dates for sandbox transactions", async () => {
+    const { plaidClient, service, store } = await createHarness({
+      plaidClient: {
+        sandboxTransactionsCreate: vi.fn(async () => {
+          return {
+            data: {
+              request_id: "sandbox-transactions-1",
+            },
+          };
+        }),
+      },
+    });
+
+    await store.saveItem({
+      accessToken: "access-token",
+      countryCodes: ["US"],
+      createdAt: "2026-04-12T00:00:00.000Z",
+      initialProducts: ["transactions"],
+      institutionId: "ins_1",
+      itemId: "item_1",
+      lastTransactionsRefreshAt: null,
+      lastTransactionsSyncAt: null,
+      transactionsCursor: null,
+    });
+
+    const result = await service.createSandboxTransactions("item_1", {
+      control: {
+        approval: {
+          approved: true,
+        },
+        idempotencyKey: "sandbox-transactions-1",
+      },
+      transactions: [
+        {
+          amount: -2400,
+          datePosted: "2026-04-14",
+          dateTransacted: "2026-04-14",
+          description: "Payday",
+          isoCurrencyCode: "USD",
+        },
+      ],
+    });
+
+    expect(result.mode).toBe("live");
+    expect(plaidClient.sandboxTransactionsCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("writes mutation audit entries", async () => {
     const { runtimeConfig, service } = await createHarness({
       plaidClient: {

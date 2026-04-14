@@ -65,3 +65,19 @@ At that point you can ask things like:
 ```bash
 pnpm harness:prompt -- "what are my accounts and balances?"
 ```
+
+## Sandbox Payday Utility
+
+Create a synthetic deposit directly into the local wealth sandbox with:
+
+```bash
+pnpm sandbox:payday -- --amount 2400
+```
+
+By default this targets the local `Plaid Checking` account if it exists. You can also target a specific sandbox account:
+
+```bash
+pnpm sandbox:payday -- --amount 2450.75 --description "Payroll" --account <accountId>
+```
+
+This command updates the same local wealth sandbox state that `pnpm harness:chat` reads. It does not create Plaid-side transactions or mutate the separate `wealth-tools` store.

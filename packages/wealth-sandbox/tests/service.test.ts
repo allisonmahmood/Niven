@@ -243,6 +243,64 @@ describe("wealth sandbox service", () => {
     expect(savings).toEqual(expect.objectContaining({ currentBalance: "50.00" }));
   });
 
+  it("previews and executes external cash deposits into a checking account", async () => {
+    const { service } = await createHarness();
+
+    const preview = await service.depositCash({
+      accountId: "checking",
+      amount: "2400.00",
+      control: {
+        approval: {
+          approved: true,
+        },
+        dryRun: true,
+        idempotencyKey: "deposit-preview",
+      },
+      date: "2026-04-14",
+      description: "Payday",
+    });
+
+    expect(preview.mode).toBe("dry_run");
+    expect((preview.preview as Record<string, unknown>).resultingCurrentBalance).toBe("2500.00");
+
+    const live = await service.depositCash({
+      accountId: "checking",
+      amount: "2400.00",
+      control: {
+        approval: {
+          approved: true,
+        },
+        idempotencyKey: "deposit-live",
+      },
+      date: "2026-04-14",
+      description: "Payday",
+    });
+
+    expect(live.mode).toBe("live");
+
+    const accounts = await service.listAccounts();
+    const checking = (accounts.accounts as Array<Record<string, unknown>>).find((account) => {
+      return account.accountId === "checking";
+    });
+    expect(checking).toEqual(
+      expect.objectContaining({
+        availableBalance: "2500.00",
+        currentBalance: "2500.00",
+      }),
+    );
+
+    const activity = await service.listAccountActivity("checking", { limit: 5 });
+    expect(activity.activities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityType: "cash_deposit_in",
+          amount: "2400.00",
+          description: "Payday",
+        }),
+      ]),
+    );
+  });
+
   it("rejects transfers from non-transferable or underfunded accounts", async () => {
     const { service } = await createHarness();
 
@@ -271,6 +329,20 @@ describe("wealth sandbox service", () => {
         },
         fromAccountId: "checking",
         toAccountId: "savings",
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    await expect(
+      service.depositCash({
+        accountId: "hsa",
+        amount: "10.00",
+        control: {
+          approval: {
+            approved: true,
+          },
+          idempotencyKey: "deposit-hsa",
+        },
+        date: "2026-04-14",
       }),
     ).rejects.toBeInstanceOf(ConflictError);
   });

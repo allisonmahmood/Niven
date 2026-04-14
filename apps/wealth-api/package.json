@@ -9,6 +9,7 @@
     "build": "tsc --build tsconfig.json",
     "dev": "node --env-file-if-exists=../../.env --import tsx src/index.ts",
     "sandbox:bootstrap": "pnpm run sandbox:reset-from-plaid",
+    "sandbox:payday": "node --env-file-if-exists=../../.env --import tsx src/paydayCli.ts",
     "sandbox:reset-from-plaid": "tsc --build tsconfig.json && node --env-file-if-exists=../../.env dist/bootstrapCli.js",
     "start": "tsc --build tsconfig.json && node --env-file-if-exists=../../.env dist/index.js",
     "typecheck": "tsc --build tsconfig.json",

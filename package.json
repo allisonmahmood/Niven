@@ -17,6 +17,8 @@
     "api:dev": "pnpm --filter @niven/wealth-api dev",
     "api:start": "pnpm --filter @niven/wealth-api start",
     "sandbox:bootstrap-user": "pnpm --filter @niven/wealth-api sandbox:bootstrap",
+    "sandbox:add-checking": "pnpm --filter @niven/wealth-api sandbox:payday",
+    "sandbox:payday": "pnpm --filter @niven/wealth-api sandbox:payday",
     "sandbox:reset-from-plaid": "pnpm --filter @niven/wealth-api sandbox:reset-from-plaid",
     "harness:chat": "pnpm --filter @niven/harness-cli chat",
     "harness:login": "pnpm --filter @niven/harness-cli login",
