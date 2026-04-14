@@ -1,8 +1,7 @@
-<p align="center">
-  <img src="./Niven-logo.png" alt="Niven logo" width="160" />
-</p>
-
-# Niven
+<h1>
+  <img src="./Niven-logo.png" alt="Niven logo" width="36" />
+  Niven
+</h1>
 
 ## Quick Start
 
