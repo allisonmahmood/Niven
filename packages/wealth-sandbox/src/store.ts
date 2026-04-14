@@ -22,6 +22,35 @@ function cloneValue<T>(value: T): T {
   return structuredClone(value);
 }
 
+function migrateState(state: SandboxState): SandboxState {
+  let nextState = state;
+
+  for (const [accountId, account] of Object.entries(state.accounts)) {
+    if (account.category !== "investment" || account.permissions.canTransfer) {
+      continue;
+    }
+
+    if (nextState === state) {
+      nextState = {
+        ...state,
+        accounts: {
+          ...state.accounts,
+        },
+      };
+    }
+
+    nextState.accounts[accountId] = {
+      ...account,
+      permissions: {
+        ...account.permissions,
+        canTransfer: true,
+      },
+    };
+  }
+
+  return nextState;
+}
+
 export class LocalSandboxStore {
   private state: SandboxState | null = null;
   private stateMtimeMs: number | null = null;
@@ -78,8 +107,16 @@ export class LocalSandboxStore {
 
     try {
       const raw = await readFile(this.filePath, "utf8");
-      this.state = raw.trim().length > 0 ? (JSON.parse(raw) as SandboxState) : createDefaultState();
+      const parsedState =
+        raw.trim().length > 0 ? (JSON.parse(raw) as SandboxState) : createDefaultState();
+      const migratedState = migrateState(parsedState);
+
+      this.state = migratedState;
       this.stateMtimeMs = await this.readFileMtimeMs();
+
+      if (migratedState !== parsedState) {
+        await this.persistState(migratedState);
+      }
     } catch (error) {
       const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
 

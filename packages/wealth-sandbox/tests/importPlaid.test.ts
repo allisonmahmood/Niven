@@ -157,6 +157,10 @@ describe("createSandboxStateFromPlaidSample", () => {
       expect.objectContaining({
         category: "investment",
         cashBalanceMicros: "400000000",
+        permissions: expect.objectContaining({
+          canTrade: true,
+          canTransfer: true,
+        }),
       }),
     );
     expect(state.securities.ABC?.name).toBe("Acme Corp");

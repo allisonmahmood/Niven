@@ -105,24 +105,24 @@ describe.skipIf(!hasPlaidSandboxEnv)("wealth sandbox e2e", () => {
         (holdings.details as { readonly holdings: unknown[] }).holdings.length,
       ).toBeGreaterThan(0);
 
-      const cashAccounts = accountRows.filter((account) => {
+      const transferAccounts = accountRows.filter((account) => {
         const permissions = account.permissions as { readonly canTransfer?: boolean } | undefined;
         return permissions?.canTransfer === true;
       });
-      expect(cashAccounts.length).toBeGreaterThanOrEqual(2);
+      expect(transferAccounts.length).toBeGreaterThanOrEqual(2);
 
       const previewTransfer = await getTool("move_cash", client).execute(
         "tool-preview-transfer",
         {
           amount: "25.00",
           executionMode: "preview",
-          fromAccountId: cashAccounts[0]?.accountId as string,
+          fromAccountId: transferAccounts[0]?.accountId as string,
           idempotencyKey: "preview-transfer",
-          toAccountId: cashAccounts[1]?.accountId as string,
+          toAccountId: transferAccounts[1]?.accountId as string,
         },
         undefined,
         undefined,
-        createContext(["Preview moving $25.00 between my cash accounts."]),
+        createContext(["Preview moving $25.00 between my transfer-enabled accounts."]),
       );
       expect(previewTransfer.details).toEqual(
         expect.objectContaining({
@@ -135,13 +135,13 @@ describe.skipIf(!hasPlaidSandboxEnv)("wealth sandbox e2e", () => {
         {
           amount: "25.00",
           executionMode: "execute",
-          fromAccountId: cashAccounts[0]?.accountId as string,
+          fromAccountId: transferAccounts[0]?.accountId as string,
           idempotencyKey: "live-transfer",
-          toAccountId: cashAccounts[1]?.accountId as string,
+          toAccountId: transferAccounts[1]?.accountId as string,
         },
         undefined,
         undefined,
-        createContext(["APPROVE: move $25.00 between my cash accounts."]),
+        createContext(["APPROVE: move $25.00 between my transfer-enabled accounts."]),
       );
       expect(liveTransfer.details).toEqual(
         expect.objectContaining({

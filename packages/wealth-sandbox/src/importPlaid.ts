@@ -67,7 +67,10 @@ function categorizeAccount(
     return {
       category: "investment",
       canTrade: true,
-      canTransfer: false,
+      // The custom sandbox keeps a cash ledger for investment accounts, so
+      // direct internal cash moves should be allowed even though this is
+      // separate from Plaid's own transfer capability model.
+      canTransfer: true,
     };
   }
 

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -73,5 +73,42 @@ describe("LocalSandboxStore", () => {
     const reloaded = await reader.readState();
 
     expect(reloaded.accounts.account_1?.name).toBe("Checking");
+  });
+
+  it("migrates older investment accounts to transfer-eligible on read", async () => {
+    const dir = await createTempDir("niven-wealth-sandbox-store-");
+    const statePath = path.join(dir, "state.json");
+    const store = new LocalSandboxStore(statePath);
+    const state = createState();
+
+    state.accounts.brokerage = {
+      accountId: "brokerage",
+      availableCashMicros: "5000000",
+      cashBalanceMicros: "5000000",
+      category: "investment",
+      creditLimitMicros: null,
+      currencyCode: "USD",
+      holderCategory: "personal",
+      importedAt: "2026-04-14T00:00:00.000Z",
+      mask: "3333",
+      name: "Brokerage",
+      officialName: "Brokerage",
+      permissions: {
+        canTrade: true,
+        canTransfer: false,
+      },
+      plaidAccountId: "plaid_brokerage",
+      sourceLabel: "seed",
+      staticAvailableBalanceMicros: "5000000",
+      staticCurrentBalanceMicros: "5000000",
+      subtype: "brokerage",
+      type: "investment",
+    };
+
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+    const migrated = await store.readState();
+
+    expect(migrated.accounts.brokerage?.permissions.canTransfer).toBe(true);
   });
 });
