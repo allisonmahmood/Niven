@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type BrowserProcessLike,
   createHarnessCli,
+  getCommandArgs,
   type HarnessSession,
   type InputStream,
   openBrowser,
@@ -87,6 +88,7 @@ function createHarnessTestApp(overrides: Partial<Parameters<typeof createHarness
     agentDir: "/tmp/pi-agent",
     authPath: "/tmp/pi-agent/auth.json",
     repoRoot: "/repo/root",
+    sessionCwd: "/tmp/pi-wealth-workspace",
     stdin: createInput([], true),
     stdout: stdout.stream,
     stderr: stderr.stream,
@@ -156,6 +158,12 @@ describe("readPromptFromInput", () => {
     );
 
     expect(prompt).toBe("summarize repo");
+  });
+
+  it("ignores the pnpm argument separator when present", () => {
+    expect(
+      getCommandArgs(["node", "index.js", "prompt", "--", "APPROVE:", "move", "cash"]),
+    ).toEqual(["APPROVE:", "move", "cash"]);
   });
 
   it("reads and trims piped stdin when no positional prompt is supplied", async () => {
@@ -241,6 +249,17 @@ describe("createHarnessCli", () => {
     expect(stderr.value).toContain("/tmp/pi-agent/auth.json");
   });
 
+  it("fails chat runs cleanly when OAuth credentials are missing", async () => {
+    const { app, stderr, authStorage } = createHarnessTestApp();
+    authStorage.get.mockReturnValue(undefined);
+
+    const exitCode = await app.main(["node", "index.js", "chat"]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr.value).toContain("OpenAI Codex OAuth is not set up yet.");
+    expect(stderr.value).toContain("Run `pnpm harness:login` first.");
+  });
+
   it("uses piped stdin as the prompt and streams text deltas", async () => {
     const session = createFakeSession({
       onPrompt: async (emit) => {
@@ -275,14 +294,57 @@ describe("createHarnessCli", () => {
     const exitCode = await app.main(["node", "index.js", "prompt"]);
 
     expect(exitCode).toBe(0);
-    expect(createInMemorySessionManager).toHaveBeenCalledWith("/repo/root");
+    expect(createInMemorySessionManager).toHaveBeenCalledWith("/tmp/pi-wealth-workspace");
     expect(createSessionMock).toHaveBeenCalledWith({
-      cwd: "/repo/root",
+      cwd: "/tmp/pi-wealth-workspace",
       authStorage,
       sessionManager: { kind: "memory-session-manager" },
       tools: [],
     });
     expect(stdout.value).toBe("Hello world\n");
+  });
+
+  it("pre-seeds explicit approval prompts into the session manager before execution", async () => {
+    const session = createFakeSession({
+      onPrompt: async (emit) => {
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            delta: "Executed",
+          },
+        });
+      },
+    });
+    const sessionManager = {
+      appendMessage: vi.fn(),
+    };
+    const createInMemorySessionManager = vi.fn(() => sessionManager);
+
+    const { app, authStorage } = createHarnessTestApp({
+      createInMemorySessionManager,
+      createSession: vi.fn(async () => ({ session })),
+    });
+
+    authStorage.get.mockReturnValue({
+      type: "oauth",
+    });
+
+    const exitCode = await app.main([
+      "node",
+      "index.js",
+      "prompt",
+      "APPROVE: move 5.00 from checking to savings",
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(createInMemorySessionManager).toHaveBeenCalledWith("/tmp/pi-wealth-workspace");
+    expect(sessionManager.appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "APPROVE: move 5.00 from checking to savings",
+        role: "user",
+      }),
+    );
   });
 
   it("falls back to the final assistant message when nothing was streamed", async () => {
@@ -312,6 +374,45 @@ describe("createHarnessCli", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout.value).toBe("Final answer\n");
+  });
+
+  it("keeps a single session alive across chat turns until exit", async () => {
+    const session = createFakeSession({
+      onPrompt: async (emit) => {
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            delta: "Response\n",
+          },
+        });
+      },
+    });
+    const createSessionMock = vi.fn(async () => ({ session }));
+    const prompter = createPrompter(["first turn", "second turn", "/exit"]);
+    const { app, stdout, stderr, authStorage, createInMemorySessionManager } = createHarnessTestApp(
+      {
+        createPrompter: vi.fn(() => prompter),
+        createSession: createSessionMock,
+      },
+    );
+
+    authStorage.get.mockReturnValue({
+      type: "oauth",
+    });
+
+    const promptSpy = vi.spyOn(session, "prompt");
+    const exitCode = await app.main(["node", "index.js", "chat"]);
+
+    expect(exitCode).toBe(0);
+    expect(createInMemorySessionManager).toHaveBeenCalledTimes(1);
+    expect(createInMemorySessionManager).toHaveBeenCalledWith("/tmp/pi-wealth-workspace");
+    expect(createSessionMock).toHaveBeenCalledTimes(1);
+    expect(promptSpy).toHaveBeenCalledTimes(2);
+    expect(promptSpy).toHaveBeenNthCalledWith(1, "first turn");
+    expect(promptSpy).toHaveBeenNthCalledWith(2, "second turn");
+    expect(stderr.value).toContain("Interactive wealth chat started.");
+    expect(stdout.value).toContain("Response\nResponse\n");
   });
 
   it("surfaces prompt failures with rerun-login guidance", async () => {

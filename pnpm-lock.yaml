@@ -54,9 +54,9 @@ importers:
       '@niven/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@niven/wealth-tools':
+      '@niven/wealth-sandbox':
         specifier: workspace:*
-        version: link:../../packages/wealth-tools
+        version: link:../../packages/wealth-sandbox
       hono:
         specifier: 4.12.12
         version: 4.12.12
@@ -71,6 +71,15 @@ importers:
         version: 41.4.0
 
   packages/shared: {}
+
+  packages/wealth-sandbox:
+    dependencies:
+      '@niven/plaid-client':
+        specifier: workspace:*
+        version: link:../plaid-client
+      '@niven/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/wealth-tools:
     dependencies:

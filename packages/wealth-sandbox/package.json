@@ -1,0 +1,22 @@
+{
+  "name": "@niven/wealth-sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --build tsconfig.json",
+    "test": "pnpm exec vitest run tests"
+  },
+  "dependencies": {
+    "@niven/plaid-client": "workspace:*",
+    "@niven/shared": "workspace:*"
+  }
+}

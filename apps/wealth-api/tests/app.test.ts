@@ -1,37 +1,25 @@
 import { ValidationError } from "@niven/shared";
-import type { WealthService } from "@niven/wealth-tools/services";
+import type { SandboxService } from "@niven/wealth-sandbox";
 import { describe, expect, it, vi } from "vitest";
+
 import { createApiApp } from "../src/app.js";
 
-function createService(overrides: Partial<WealthService> = {}): WealthService {
+function createService(overrides: Partial<SandboxService> = {}): SandboxService {
   return {
-    authorizeTransfer: vi.fn(),
-    cancelRecurringTransfer: vi.fn(),
-    cancelTransfer: vi.fn(),
-    createRecurringTransfer: vi.fn(),
-    createSandboxTransactions: vi.fn(),
-    createTransfer: vi.fn(),
-    fireSandboxItemWebhook: vi.fn(),
-    getAccounts: vi.fn(),
-    getBalances: vi.fn(),
-    getConfig: vi.fn(() => ({ sandboxOnly: true })),
-    getHoldings: vi.fn(),
-    getInvestmentTransactions: vi.fn(),
-    getItem: vi.fn(),
-    getTransactions: vi.fn(),
+    getAccount: vi.fn(),
+    getConfig: vi.fn(async () => ({ mode: "wealth_sandbox" })),
+    getOrder: vi.fn(),
     getTransfer: vi.fn(),
-    getTransferBalance: vi.fn(),
-    getTransferCapabilities: vi.fn(),
-    getTransferConfiguration: vi.fn(),
-    linkSandboxItem: vi.fn(),
-    listItems: vi.fn(),
-    listRecurringTransfers: vi.fn(),
+    listAccountActivity: vi.fn(),
+    listAccounts: vi.fn(),
+    listHoldings: vi.fn(),
+    listOrders: vi.fn(),
+    listSecurities: vi.fn(),
     listTransfers: vi.fn(),
-    refreshTransactions: vi.fn(),
-    resetSandboxLogin: vi.fn(),
-    syncTransactions: vi.fn(),
+    submitTrade: vi.fn(),
+    transferCash: vi.fn(),
     ...overrides,
-  } as WealthService;
+  };
 }
 
 describe("wealth api", () => {
@@ -41,7 +29,7 @@ describe("wealth api", () => {
       service: createService(),
     });
 
-    const response = await app.request("/v1/items");
+    const response = await app.request("/v1/accounts");
     const body = await response.json();
 
     expect(response.status).toBe(401);
@@ -54,7 +42,7 @@ describe("wealth api", () => {
       service: createService(),
     });
 
-    const response = await app.request("/v1/items/item_1/transactions?pending=maybe");
+    const response = await app.request("/v1/accounts/account_1/activity?limit=abc");
     const body = await response.json();
 
     expect(response.status).toBe(400);
@@ -62,13 +50,13 @@ describe("wealth api", () => {
     expect(body.error.code).toBe("VALIDATION_ERROR");
   });
 
-  it("passes request bodies through to the service layer", async () => {
+  it("passes request bodies through to the sandbox service layer", async () => {
     const service = createService({
-      linkSandboxItem: vi.fn(async (input) => {
+      transferCash: vi.fn(async (input) => {
         return {
           echoed: input,
           mode: "live",
-        } as never;
+        };
       }),
     });
     const app = createApiApp({
@@ -76,17 +64,18 @@ describe("wealth api", () => {
     });
 
     const payload = {
+      amount: "25.00",
       control: {
         approval: {
           approved: true,
         },
-        idempotencyKey: "link-1",
+        idempotencyKey: "transfer-1",
       },
-      initialProducts: ["transactions"],
-      institutionId: "ins_1",
+      fromAccountId: "checking",
+      toAccountId: "savings",
     };
 
-    const response = await app.request("/v1/items/sandbox/link", {
+    const response = await app.request("/v1/transfers/internal", {
       body: JSON.stringify(payload),
       headers: {
         "content-type": "application/json",
@@ -97,19 +86,19 @@ describe("wealth api", () => {
 
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(service.linkSandboxItem).toHaveBeenCalledWith(payload);
+    expect(service.transferCash).toHaveBeenCalledWith(payload);
   });
 
-  it("normalizes service errors with the shared error envelope", async () => {
+  it("normalizes sandbox service errors with the shared error envelope", async () => {
     const app = createApiApp({
       service: createService({
-        listItems: vi.fn(async () => {
+        listAccounts: vi.fn(async () => {
           throw new ValidationError("boom");
         }),
       }),
     });
 
-    const response = await app.request("/v1/items");
+    const response = await app.request("/v1/accounts");
     const body = await response.json();
 
     expect(response.status).toBe(400);

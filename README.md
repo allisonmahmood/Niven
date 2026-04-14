@@ -1,36 +1,67 @@
 # Niven
 
-## Plaid Sandbox Env
+## Quick Start
 
-For local Plaid sandbox setup, put these in the repo root `.env` file:
+1. Install dependencies:
+
+```bash
+pnpm install
+```
+
+2. Create a local env file from the example:
+
+```bash
+cp .env.example .env
+```
+
+3. Fill in the required Plaid Sandbox credentials in `.env`:
 
 - `PLAID_CLIENT_ID`
 - `PLAID_SECRET`
 - `PLAID_ENV=sandbox`
-- optional: `PLAID_COUNTRY_CODES=US`
-- optional: `PLAID_PRODUCTS=transactions,investments,transfer`
 
-## Wealth API
+Optional:
 
-The repo now includes a Pi-ready internal API in [apps/wealth-api](/Users/allisonmahmood/Dev/Niven/apps/wealth-api) plus a package-first finance layer in [packages/wealth-tools](/Users/allisonmahmood/Dev/Niven/packages/wealth-tools) backed by [packages/plaid-client](/Users/allisonmahmood/Dev/Niven/packages/plaid-client).
+- `NIVEN_API_TOKEN` if you want the local API to require a bearer token
+- `NIVEN_API_PORT` if you do not want to use the default `4321`
 
-Start it with:
+4. Pull the sample snapshot from Plaid Sandbox into the local sandbox:
+
+```bash
+pnpm sandbox:reset-from-plaid
+```
+
+5. Start the local API:
 
 ```bash
 pnpm api:start
 ```
 
-For local development:
+6. Authenticate Pi once:
 
 ```bash
-pnpm api:dev
+pnpm harness:login
 ```
 
-The API is sandbox-only, single-user, stores Plaid access tokens/cursors in a gitignored local JSON store under `.niven/`, and supports:
+7. Start the chat session:
 
-- linked sandbox item creation
-- accounts and balances reads
-- transaction sync plus cached transaction history queries
-- investment holdings and investment transaction reads
-- Plaid Transfer authorization, creation, cancellation, and recurring transfer flows
-- dry-run, idempotency, audit logging, and optional approval enforcement via `NIVEN_REQUIRE_MUTATION_APPROVAL=true`
+```bash
+pnpm harness:chat
+```
+
+At that point you can ask things like:
+
+- `what are my accounts and balances?`
+- `show me my holdings`
+- `preview moving 5.00 from account <from_account_id> to account <to_account_id>`
+- `APPROVE: move 5.00 from account <from_account_id> to account <to_account_id>`
+
+## Notes
+
+- If you want to reset the local sandbox back to the Plaid sample snapshot, run `pnpm sandbox:reset-from-plaid` again.
+- If you set `NIVEN_API_TOKEN`, the harness will automatically use it from your `.env`.
+- For one-off prompts instead of chat, use:
+
+```bash
+pnpm harness:prompt -- "what are my accounts and balances?"
+```
