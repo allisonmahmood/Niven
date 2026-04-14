@@ -30,6 +30,7 @@ import type {
 } from "./types.js";
 
 export interface SandboxService {
+  depositCash(input: unknown): Promise<Record<string, unknown>>;
   getConfig(): Promise<Record<string, unknown>>;
   getAccount(accountId: string): Promise<Record<string, unknown>>;
   getOrder(orderId: string): Promise<Record<string, unknown>>;
@@ -131,6 +132,22 @@ function readMutationControl(record: Record<string, unknown>): MutationControlIn
     ...(typeof rawControl.dryRun === "boolean" ? { dryRun: rawControl.dryRun } : {}),
     idempotencyKey,
   };
+}
+
+function readRequiredDate(record: Record<string, unknown>, key: string): string {
+  const value = readRequiredString(record, key);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new ValidationError(`Invalid ${key}.`);
+  }
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+
+  if (Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new ValidationError(`Invalid ${key}.`);
+  }
+
+  return value;
 }
 
 function readLimit(input: unknown): number | undefined {
@@ -286,6 +303,16 @@ function ensureTransferableAccount(account: SandboxAccountRecord): void {
   }
 }
 
+function ensureDepositableCashAccount(account: SandboxAccountRecord): void {
+  if (
+    account.category !== "cash" ||
+    account.cashBalanceMicros === null ||
+    account.availableCashMicros === null
+  ) {
+    throw new ConflictError(`Account ${account.name} does not support cash deposits.`);
+  }
+}
+
 function ensureTradableAccount(account: SandboxAccountRecord): void {
   if (!account.permissions.canTrade || account.cashBalanceMicros === null) {
     throw new ConflictError(`Account ${account.name} does not support trading.`);
@@ -427,6 +454,98 @@ export function createSandboxService(options: CreateSandboxServiceOptions = {}):
   }
 
   return {
+    async depositCash(input) {
+      const record = readObject(input, "Deposit input must be an object.");
+      const control = readMutationControl(record);
+      const accountId = readRequiredString(record, "accountId");
+      const amountMicros = parseMoney(readRequiredString(record, "amount"));
+      const date = readRequiredDate(record, "date");
+      const description = readOptionalString(record, "description") ?? "Payday";
+
+      if (amountMicros <= 0n) {
+        throw new ValidationError("amount must be greater than zero.");
+      }
+
+      return runMutation({
+        buildPreview: (state) => {
+          const account = getAccountOrThrow(state, accountId);
+          ensureDepositableCashAccount(account);
+          const currentBalance = BigInt(account.cashBalanceMicros ?? "0");
+          const availableBalance = BigInt(
+            account.availableCashMicros ?? account.cashBalanceMicros ?? "0",
+          );
+
+          return {
+            preview: {
+              account: toPublicAccount(state, account),
+              amount: formatMoney(amountMicros),
+              date,
+              description,
+              resultingAvailableBalance: formatMoney(availableBalance + amountMicros),
+              resultingCurrentBalance: formatMoney(currentBalance + amountMicros),
+            },
+            summary: {
+              accountId,
+              amount: formatMoney(amountMicros),
+              date,
+            },
+          };
+        },
+        buildSuccessAuditResult: (response) =>
+          readObject(response.deposit, "deposit response missing."),
+        execute: (state, _approvalRationale, timestamp) => {
+          const account = getAccountOrThrow(state, accountId);
+          ensureDepositableCashAccount(account);
+
+          const currentBalance = BigInt(account.cashBalanceMicros ?? "0");
+          const availableBalance = BigInt(
+            account.availableCashMicros ?? account.cashBalanceMicros ?? "0",
+          );
+          account.cashBalanceMicros = (currentBalance + amountMicros).toString();
+          account.availableCashMicros = (availableBalance + amountMicros).toString();
+
+          const transactionId = randomUUID();
+          state.importedTransactions[transactionId] = {
+            accountId,
+            amountMicros: (-amountMicros).toString(),
+            date,
+            importedAt: timestamp,
+            merchantName: null,
+            name: description,
+            pending: false,
+            plaidTransactionId: `local_cash_deposit_${transactionId}`,
+            sourceLabel: "local_cash_deposit",
+            transactionId,
+          };
+
+          return {
+            deposit: {
+              accountId,
+              amount: formatMoney(amountMicros),
+              createdAt: timestamp,
+              date,
+              description,
+              transactionId,
+            },
+            summary: {
+              accountId,
+              amount: formatMoney(amountMicros),
+              date,
+              transactionId,
+            },
+          };
+        },
+        input: control,
+        metadata: {
+          accountId,
+          amount: formatMoney(amountMicros),
+          date,
+        },
+        operation: "cash_deposit",
+        scope: accountId,
+      });
+    },
+
     async getConfig() {
       const state = await store.readState();
 
@@ -485,10 +604,13 @@ export function createSandboxService(options: CreateSandboxServiceOptions = {}):
       const importedTransactions = Object.values(state.importedTransactions)
         .filter((transaction) => transaction.accountId === accountId)
         .map((transaction) => {
+          const isLocalCashDeposit = transaction.sourceLabel === "local_cash_deposit";
+          const amountMicros = BigInt(transaction.amountMicros);
+
           return {
             activityId: transaction.transactionId,
-            activityType: "imported_transaction",
-            amount: formatMoney(BigInt(transaction.amountMicros)),
+            activityType: isLocalCashDeposit ? "cash_deposit_in" : "imported_transaction",
+            amount: formatMoney(isLocalCashDeposit ? -amountMicros : amountMicros),
             date: transaction.date,
             description: transaction.name,
             merchantName: transaction.merchantName,

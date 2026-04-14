@@ -1,11 +1,14 @@
 import { ValidationError } from "@niven/shared";
 import { type Static, type TSchema, Type } from "@sinclair/typebox";
+import { TypeSystem } from "@sinclair/typebox/system";
 import { Value } from "@sinclair/typebox/value";
 
 const nonEmptyString = Type.String({ minLength: 1 });
 const dateString = Type.String({ format: "date" });
 const isoDateTimeString = Type.String({ format: "date-time" });
 const amountString = Type.String({ pattern: "^[-]?\\d+\\.\\d{2}$" });
+
+registerDateFormat();
 
 export const approvalSchema = Type.Object(
   {
@@ -294,4 +297,19 @@ export function validateSchema<T extends TSchema>(schema: T, value: unknown): St
   }
 
   return value as Static<T>;
+}
+
+function registerDateFormat(): void {
+  try {
+    TypeSystem.Format("date", (value) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return false;
+      }
+
+      const parsed = new Date(`${value}T00:00:00.000Z`);
+      return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+    });
+  } catch {
+    // Ignore duplicate registrations when this module is re-evaluated in tests.
+  }
 }
