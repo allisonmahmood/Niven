@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { AuthStorage, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
+import { writeMemoryMarkdown } from "../src/memory.js";
 import { writeSoulMarkdown } from "../src/soul.js";
 import type { WealthApiClient } from "../src/wealthApiClient.js";
 import {
@@ -16,6 +17,7 @@ import {
   DEFAULT_WEALTH_SOUL_PATH,
   getWealthHarnessPaths,
   loadWealthSoul,
+  WEALTH_MEMORY_ONBOARDING_PROMPT,
   WEALTH_POLICY_PROMPT,
 } from "../src/wealthSession.js";
 import { WEALTH_ALLOWED_TOOL_NAMES, WEALTH_FORBIDDEN_TOOL_NAMES } from "../src/wealthTools.js";
@@ -42,6 +44,7 @@ describe("wealth session resources", () => {
 
     expect(paths.agentDir).toBe("/repo/root/.niven/pi-wealth/agent");
     expect(paths.authPath).toBe("/repo/root/.niven/pi-wealth/agent/auth.json");
+    expect(paths.memoryPath).toBe("/repo/root/.niven/pi-wealth/agent/MEMORY.md");
     expect(paths.sessionCwd).toBe("/repo/root/.niven/pi-wealth/workspace");
   });
 
@@ -85,18 +88,26 @@ describe("wealth session resources", () => {
     expect(loader.getSystemPrompt()).toBe(buildWealthSystemPrompt());
   });
 
-  it("injects soul guidance before the non-negotiable wealth policy", async () => {
+  it("injects soul and memory guidance before the non-negotiable wealth policy", async () => {
     const cwd = await createTempDir("niven-wealth-cwd-");
     const agentDir = await createTempDir("niven-wealth-agent-");
     const settingsManager = SettingsManager.inMemory();
+    const memoryPath = path.join(agentDir, "MEMORY.md");
     const soulPath = path.join(cwd, "SOUL.md");
     const customSoul = "# Niven\n\nBe playful, but do not break policy.";
+    const customMemory = `# Memory
+
+## Financial Goals
+- Reach financial independence before age 50.
+`;
 
     await writeFile(soulPath, customSoul);
+    await writeFile(memoryPath, customMemory);
 
     const loader = createWealthResourceLoader({
       agentDir,
       cwd,
+      memoryPath,
       settingsManager,
       soulPath,
     });
@@ -105,10 +116,14 @@ describe("wealth session resources", () => {
 
     const prompt = loader.getSystemPrompt();
 
-    expect(prompt).toBe(composeWealthSystemPrompt(customSoul));
+    expect(prompt).toBe(composeWealthSystemPrompt(customSoul, customMemory));
     expect(prompt).toContain(customSoul);
+    expect(prompt).toContain(customMemory);
     expect(prompt).toContain(WEALTH_POLICY_PROMPT);
     expect(prompt?.indexOf(customSoul)).toBeLessThan(
+      prompt?.indexOf("# Wealth Policy") ?? Infinity,
+    );
+    expect(prompt?.indexOf(customMemory)).toBeLessThan(
       prompt?.indexOf("# Wealth Policy") ?? Infinity,
     );
   });
@@ -127,6 +142,14 @@ describe("wealth session resources", () => {
 
   it("falls back to the built-in soul when the file is missing", () => {
     expect(loadWealthSoul("/tmp/does-not-exist-soul.md")).toBe(DEFAULT_WEALTH_SOUL_FALLBACK);
+  });
+
+  it("shows onboarding instructions when memory is missing", () => {
+    const prompt = buildWealthSystemPrompt("/tmp/does-not-exist-soul.md");
+
+    expect(prompt).toContain("# Memory");
+    expect(prompt).toContain("No durable user memory has been saved yet.");
+    expect(prompt).toContain(WEALTH_MEMORY_ONBOARDING_PROMPT);
   });
 
   it("builds a session config with no built-in tools and only allowed wealth tools", async () => {
@@ -195,6 +218,48 @@ describe("wealth session resources", () => {
 
     expect(nextLoader.getSystemPrompt()).toContain(
       "Default to direct answers first on simple factual questions.",
+    );
+  });
+
+  it("loads memory updates on the next loader", async () => {
+    const cwd = await createTempDir("niven-wealth-cwd-");
+    const agentDir = await createTempDir("niven-wealth-agent-");
+    const memoryPath = path.join(agentDir, "MEMORY.md");
+    const settingsManager = SettingsManager.inMemory();
+
+    const currentLoader = createWealthResourceLoader({
+      agentDir,
+      cwd,
+      memoryPath,
+      settingsManager,
+    });
+
+    await currentLoader.reload();
+    const beforePrompt = currentLoader.getSystemPrompt();
+
+    await writeMemoryMarkdown({
+      content: `# Memory
+
+## Preferences
+- Prefers conservative assumptions and explicit downside analysis.
+`,
+      memoryPath,
+    });
+
+    expect(currentLoader.getSystemPrompt()).toBe(beforePrompt);
+    expect(beforePrompt).not.toContain("Prefers conservative assumptions");
+
+    const nextLoader = createWealthResourceLoader({
+      agentDir,
+      cwd,
+      memoryPath,
+      settingsManager: SettingsManager.inMemory(),
+    });
+
+    await nextLoader.reload();
+
+    expect(nextLoader.getSystemPrompt()).toContain(
+      "Prefers conservative assumptions and explicit downside analysis.",
     );
   });
 });

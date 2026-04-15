@@ -323,4 +323,49 @@ You are Niven.
     await expect(readFile(soulPath, "utf8")).resolves.toContain("- Be much more conversational.");
     await expect(readFile(auditPath, "utf8")).resolves.toContain('"mode":"overwrite"');
   });
+
+  it("updates MEMORY.md without requiring an approval message", async () => {
+    const tempDir = await createTempDir("niven-wealth-memory-tool-");
+    const memoryPath = path.join(tempDir, "MEMORY.md");
+    const auditPath = path.join(tempDir, ".memory-updates.jsonl");
+    const tool = getTool("update_memory", {}, { memoryAuditPath: auditPath, memoryPath });
+
+    const result = await tool.execute(
+      "tool-6",
+      {
+        content: `# Memory
+
+## Financial Goals
+- Build a larger emergency fund.
+
+## Risk Tolerance
+- Moderately conservative.
+`,
+      },
+      undefined,
+      undefined,
+      createContext(["I care a lot about downside protection."]),
+    );
+
+    expect(result.details).toEqual({
+      appliesOnNextSession: true,
+      auditPath,
+      contentBytes: Buffer.byteLength(
+        `# Memory
+
+## Financial Goals
+- Build a larger emergency fund.
+
+## Risk Tolerance
+- Moderately conservative.
+`,
+        "utf8",
+      ),
+      futureSessionsOnly: true,
+      memoryPath,
+      updated: true,
+    });
+    await expect(readFile(memoryPath, "utf8")).resolves.toContain("Build a larger emergency fund");
+    await expect(readFile(auditPath, "utf8")).resolves.toContain('"mode":"overwrite"');
+  });
 });

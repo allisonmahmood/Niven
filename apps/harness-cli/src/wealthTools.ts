@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Type } from "@mariozechner/pi-ai";
@@ -10,6 +11,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 import { getApprovalRationale, hasExplicitApproval, WEALTH_APPROVAL_PREFIX } from "./approval.js";
+import { defaultMemoryAuditPath, defaultWealthMemoryPath, writeMemoryMarkdown } from "./memory.js";
 import { DEFAULT_WEALTH_SOUL_FALLBACK, defaultSoulAuditPath, writeSoulMarkdown } from "./soul.js";
 import type { WealthApiClient } from "./wealthApiClient.js";
 
@@ -29,6 +31,9 @@ type MutationParams = {
 };
 
 export interface CreateWealthToolsOptions {
+  readonly agentDir?: string;
+  readonly memoryAuditPath?: string;
+  readonly memoryPath?: string;
   readonly soulAuditPath?: string;
   readonly soulPath?: string;
 }
@@ -46,6 +51,7 @@ export const WEALTH_ALLOWED_TOOL_NAMES = [
   "list_orders",
   "get_order",
   "update_soul",
+  "update_memory",
 ] as const;
 
 export const WEALTH_FORBIDDEN_TOOL_NAMES = [
@@ -103,6 +109,10 @@ export function createWealthTools(
   client: WealthApiClient,
   options: CreateWealthToolsOptions = {},
 ): ToolDefinition[] {
+  const defaultAgentDir =
+    options.agentDir ?? path.join(process.cwd(), ".niven", "pi-wealth", "agent");
+  const memoryPath = options.memoryPath ?? defaultWealthMemoryPath(defaultAgentDir);
+  const memoryAuditPath = options.memoryAuditPath ?? defaultMemoryAuditPath(memoryPath);
   const soulPath = options.soulPath ?? defaultSoulPath;
   const soulAuditPath = options.soulAuditPath ?? defaultSoulAuditPath(soulPath);
 
@@ -335,6 +345,36 @@ export function createWealthTools(
           contentBytes: Buffer.byteLength(data.content, "utf8"),
           futureSessionsOnly: true,
           soulPath: data.soulPath,
+          updated: data.updated,
+        });
+      },
+    }),
+    createReadTool({
+      name: "update_memory",
+      label: "Update Memory",
+      description:
+        "Rewrite MEMORY.md for future sessions. Use this for durable user-specific context such as goals, preferences, risk tolerance, constraints, and plans. Do not store secrets or raw ephemeral account data.",
+      parameters: Type.Object(
+        {
+          content: Type.String({ minLength: 1 }),
+          reason: Type.Optional(Type.String({ maxLength: 280, minLength: 1 })),
+        },
+        { additionalProperties: false },
+      ),
+      async execute(_toolCallId, params) {
+        const data = await writeMemoryMarkdown({
+          auditPath: memoryAuditPath,
+          content: params.content,
+          memoryPath,
+          ...(params.reason ? { reason: params.reason } : {}),
+        });
+
+        return makeResult("update_memory", {
+          appliesOnNextSession: true,
+          auditPath: data.auditPath,
+          contentBytes: Buffer.byteLength(data.content, "utf8"),
+          futureSessionsOnly: true,
+          memoryPath: data.memoryPath,
           updated: data.updated,
         });
       },

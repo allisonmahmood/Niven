@@ -8,12 +8,13 @@ import { loginOpenAICodex } from "@mariozechner/pi-ai/oauth";
 import { AuthStorage, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 
 import { createHarnessCli, openBrowser } from "./harness.js";
+import { hasWealthMemory } from "./memory.js";
 import { WealthApiClient } from "./wealthApiClient.js";
 import { createWealthAgentSession, getWealthHarnessPaths } from "./wealthSession.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
-const { agentDir, authPath, sessionCwd } = getWealthHarnessPaths(repoRoot);
+const { agentDir, authPath, memoryPath, sessionCwd } = getWealthHarnessPaths(repoRoot);
 const authStorage = AuthStorage.create(authPath);
 const wealthApiClient = new WealthApiClient({
   baseUrl: process.env.NIVEN_WEALTH_API_URL ?? "http://127.0.0.1:4321",
@@ -23,6 +24,9 @@ const wealthApiClient = new WealthApiClient({
 const app = createHarnessCli({
   agentDir,
   authPath,
+  hasUserMemory() {
+    return hasWealthMemory(memoryPath);
+  },
   repoRoot,
   sessionCwd,
   stdin: input,
@@ -49,6 +53,7 @@ const app = createHarnessCli({
       client: wealthApiClient,
       cwd: options.cwd,
       authStorage,
+      memoryPath,
       sessionManager: options.sessionManager as SessionManager,
       settingsManager: SettingsManager.inMemory(),
     });
