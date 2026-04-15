@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { clearExplicitApprovalOverride, setExplicitApprovalOverride } from "./approval.js";
+import { WEALTH_MEMORY_ONBOARDING_KICKOFF_PROMPT } from "./wealthSession.js";
 
 export const OPENAI_CODEX_PROVIDER = "openai-codex";
 
@@ -84,6 +85,7 @@ export interface PromptAwareSessionManager {
 export interface HarnessDeps {
   agentDir: string;
   authPath: string;
+  hasUserMemory(): boolean;
   repoRoot: string;
   sessionCwd: string;
   stdin: InputStream;
@@ -388,6 +390,14 @@ export function createHarnessCli(deps: HarnessDeps) {
       return 1;
     }
 
+    if (!deps.hasUserMemory()) {
+      writeLine(
+        deps.stderr,
+        "No user MEMORY.md exists yet. Run `pnpm harness:chat` to complete onboarding before using one-off prompts.",
+      );
+      return 1;
+    }
+
     try {
       const { session, sessionManager } = await createPromptSession();
 
@@ -416,10 +426,26 @@ export function createHarnessCli(deps: HarnessDeps) {
     const prompter = deps.createPrompter();
 
     try {
-      const { session, sessionManager } = await createPromptSession();
+      let { session, sessionManager } = await createPromptSession();
+      let hasUserMemory = deps.hasUserMemory();
       writeLine(deps.stderr, "Interactive wealth chat started. Type `/exit` to quit.");
 
       try {
+        if (!hasUserMemory) {
+          writeLine(deps.stderr, "No user MEMORY.md found. Starting onboarding.");
+          await runSessionPrompt(session, WEALTH_MEMORY_ONBOARDING_KICKOFF_PROMPT, sessionManager);
+
+          if (deps.hasUserMemory()) {
+            session.dispose();
+            ({ session, sessionManager } = await createPromptSession());
+            hasUserMemory = true;
+            writeLine(
+              deps.stderr,
+              "Saved MEMORY.md and started a fresh session with durable user context.",
+            );
+          }
+        }
+
         while (true) {
           let prompt: string;
 
@@ -438,6 +464,16 @@ export function createHarnessCli(deps: HarnessDeps) {
           }
 
           await runSessionPrompt(session, prompt, sessionManager);
+
+          if (!hasUserMemory && deps.hasUserMemory()) {
+            session.dispose();
+            ({ session, sessionManager } = await createPromptSession());
+            hasUserMemory = true;
+            writeLine(
+              deps.stderr,
+              "Saved MEMORY.md and started a fresh session with durable user context.",
+            );
+          }
         }
       } finally {
         session.dispose();

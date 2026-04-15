@@ -51,7 +51,7 @@ function createPrompter(answers: readonly string[] = []) {
 function createFakeSession(
   options: {
     messages?: unknown[];
-    onPrompt?: (emit: (event: unknown) => void) => Promise<void> | void;
+    onPrompt?: (prompt: string, emit: (event: unknown) => void) => Promise<void> | void;
   } = {},
 ): HarnessSession {
   const listeners: Array<(event: unknown) => void> = [];
@@ -62,8 +62,8 @@ function createFakeSession(
       listeners.push(listener);
       return vi.fn();
     },
-    async prompt() {
-      await options.onPrompt?.((event) => {
+    async prompt(prompt) {
+      await options.onPrompt?.(prompt, (event) => {
         for (const listener of listeners) {
           listener(event);
         }
@@ -83,10 +83,12 @@ function createHarnessTestApp(overrides: Partial<Parameters<typeof createHarness
   };
   const createSession = vi.fn();
   const createInMemorySessionManager = vi.fn(() => ({ kind: "memory-session-manager" }));
+  const hasUserMemory = vi.fn(() => true);
 
-  const app = createHarnessCli({
+  const deps = {
     agentDir: "/tmp/pi-agent",
     authPath: "/tmp/pi-agent/auth.json",
+    hasUserMemory,
     repoRoot: "/repo/root",
     sessionCwd: "/tmp/pi-wealth-workspace",
     stdin: createInput([], true),
@@ -104,7 +106,9 @@ function createHarnessTestApp(overrides: Partial<Parameters<typeof createHarness
     createSession,
     createInMemorySessionManager,
     ...overrides,
-  });
+  };
+
+  const app = createHarnessCli(deps);
 
   return {
     app,
@@ -114,6 +118,7 @@ function createHarnessTestApp(overrides: Partial<Parameters<typeof createHarness
     authStorage,
     createSession,
     createInMemorySessionManager,
+    hasUserMemory: deps.hasUserMemory as typeof hasUserMemory,
   };
 }
 
@@ -260,9 +265,27 @@ describe("createHarnessCli", () => {
     expect(stderr.value).toContain("Run `pnpm harness:login` first.");
   });
 
+  it("requires onboarding before one-off prompt runs", async () => {
+    const { app, stderr, authStorage, createSession, hasUserMemory } = createHarnessTestApp({
+      hasUserMemory: vi.fn(() => false),
+    });
+
+    authStorage.get.mockReturnValue({
+      type: "oauth",
+    });
+
+    const exitCode = await app.main(["node", "index.js", "prompt", "show my balances"]);
+
+    expect(exitCode).toBe(1);
+    expect(hasUserMemory).toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(stderr.value).toContain("No user MEMORY.md exists yet.");
+    expect(stderr.value).toContain("pnpm harness:chat");
+  });
+
   it("uses piped stdin as the prompt and streams text deltas", async () => {
     const session = createFakeSession({
-      onPrompt: async (emit) => {
+      onPrompt: async (_prompt, emit) => {
         emit({
           type: "message_update",
           assistantMessageEvent: {
@@ -306,7 +329,7 @@ describe("createHarnessCli", () => {
 
   it("pre-seeds explicit approval prompts into the session manager before execution", async () => {
     const session = createFakeSession({
-      onPrompt: async (emit) => {
+      onPrompt: async (_prompt, emit) => {
         emit({
           type: "message_update",
           assistantMessageEvent: {
@@ -378,7 +401,7 @@ describe("createHarnessCli", () => {
 
   it("keeps a single session alive across chat turns until exit", async () => {
     const session = createFakeSession({
-      onPrompt: async (emit) => {
+      onPrompt: async (_prompt, emit) => {
         emit({
           type: "message_update",
           assistantMessageEvent: {
@@ -413,6 +436,83 @@ describe("createHarnessCli", () => {
     expect(promptSpy).toHaveBeenNthCalledWith(2, "second turn");
     expect(stderr.value).toContain("Interactive wealth chat started.");
     expect(stdout.value).toContain("Response\nResponse\n");
+  });
+
+  it("starts onboarding automatically and recreates the session after memory is saved", async () => {
+    let memoryReady = false;
+    const onboardingSession = createFakeSession({
+      onPrompt: async (prompt, emit) => {
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            delta: prompt.includes("Start onboarding now")
+              ? "What are your main financial goals?\n"
+              : "Thanks, I saved that context.\n",
+          },
+        });
+
+        if (prompt === "I want to retire early and stay conservative.") {
+          memoryReady = true;
+        }
+      },
+    });
+    const memoryBackedSession = createFakeSession({
+      onPrompt: async (_prompt, emit) => {
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            delta: "Here are your balances.\n",
+          },
+        });
+      },
+    });
+    const onboardingPromptSpy = vi.spyOn(onboardingSession, "prompt");
+    const memoryPromptSpy = vi.spyOn(memoryBackedSession, "prompt");
+    const createSession = vi
+      .fn()
+      .mockResolvedValueOnce({ session: onboardingSession })
+      .mockResolvedValueOnce({ session: memoryBackedSession });
+    const { app, authStorage, createInMemorySessionManager, stderr, stdout } = createHarnessTestApp(
+      {
+        createPrompter: vi.fn(() =>
+          createPrompter([
+            "I want to retire early and stay conservative.",
+            "show balances",
+            "/exit",
+          ]),
+        ),
+        createSession,
+        hasUserMemory: vi.fn(() => memoryReady),
+      },
+    );
+
+    authStorage.get.mockReturnValue({
+      type: "oauth",
+    });
+
+    const exitCode = await app.main(["node", "index.js", "chat"]);
+
+    expect(exitCode).toBe(0);
+    expect(createInMemorySessionManager).toHaveBeenCalledTimes(2);
+    expect(createSession).toHaveBeenCalledTimes(2);
+    expect(onboardingPromptSpy).toHaveBeenCalledTimes(2);
+    expect(onboardingPromptSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("Start onboarding now"),
+    );
+    expect(onboardingPromptSpy).toHaveBeenNthCalledWith(
+      2,
+      "I want to retire early and stay conservative.",
+    );
+    expect(memoryPromptSpy).toHaveBeenCalledTimes(1);
+    expect(memoryPromptSpy).toHaveBeenCalledWith("show balances");
+    expect(stderr.value).toContain("No user MEMORY.md found. Starting onboarding.");
+    expect(stderr.value).toContain("Saved MEMORY.md and started a fresh session");
+    expect(stdout.value).toContain("What are your main financial goals?\n");
+    expect(stdout.value).toContain("Thanks, I saved that context.\n");
+    expect(stdout.value).toContain("Here are your balances.\n");
   });
 
   it("surfaces prompt failures with rerun-login guidance", async () => {
