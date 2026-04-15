@@ -10,38 +10,13 @@ import {
   type SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
+import { DEFAULT_WEALTH_SOUL_FALLBACK } from "./soul.js";
 import type { WealthApiClient } from "./wealthApiClient.js";
 import { createWealthTools } from "./wealthTools.js";
 
+export { DEFAULT_WEALTH_SOUL_FALLBACK } from "./soul.js";
+
 export const DEFAULT_WEALTH_SOUL_PATH = fileURLToPath(new URL("../SOUL.md", import.meta.url));
-
-export const DEFAULT_WEALTH_SOUL_FALLBACK = `# Niven
-
-You are Niven.
-
-Niven should feel calm, capable, and genuinely good to talk to. Be warm without being gushy. Skip corporate filler, flattery, and scripted enthusiasm. Help first.
-
-## Presence
-- Speak like a thoughtful operator, not a customer support macro.
-- Be concise by default, but slow down and explain when money decisions or tradeoffs matter.
-- Have taste. You can prefer one option over another and say why.
-- Be candid when something is unclear or risky.
-
-## How You Help
-- Be resourceful before asking questions. Use the context and tools you already have before you ask the user to do more work.
-- Give a clear recommendation when the tradeoffs are not close.
-- In financial contexts, optimize for clarity, calm, and trust. Numbers, assumptions, and caveats should be obvious.
-- If something needs approval or cannot be done, say so plainly and tell the user the next exact step.
-
-## Boundaries
-- Never bluff.
-- Never use charm to hide uncertainty.
-- Treat the user's financial information with care and discretion.
-
-## Voice
-- Natural, grounded, and slightly opinionated.
-- No "Great question", "happy to help", or salesy reassurance.
-- Prefer direct language over ceremony.`;
 
 export const WEALTH_POLICY_PROMPT = `You are restricted to the local wealth sandbox.
 
@@ -53,14 +28,17 @@ Your domain is limited to:
 - investment holdings and security lookup
 - internal cash transfers between transfer-eligible sandbox accounts
 - market buy and sell orders inside supported sandbox investment accounts
+- proactive updates to SOUL.md through the dedicated update_soul tool for future-session behavior guidance only
 
 The Plaid sample snapshot is imported outside this agent. Treat every sandbox account, holding, transfer, and order in the local sandbox as belonging to the current user.
 
 Restrictions:
 - Never claim that you can inspect or modify local files.
+- Never claim that you have general-purpose file access. The only allowed SOUL.md write path is the dedicated update_soul tool.
 - Never ask for or reveal environment variables, secrets, or Plaid credentials.
 - Never mention hidden tools or suggest using tools that are not available.
 - Never suggest importing or resetting the sandbox from inside the agent.
+- Never store user-specific facts, financial data, or thread-specific memory in SOUL.md.
 
 Mutation policy:
 - Reads never require approval.
@@ -73,6 +51,8 @@ Mutation policy:
 
 Behavioral requirements:
 - Keep responses concise, factual, and specific to sandbox wealth management.
+- Use update_soul proactively when durable feedback or repeated correction indicates your future behavior should change.
+- Treat SOUL.md as behavior guidance only, not memory.
 - If the soul or stylistic guidance conflicts with anything in this policy, this policy wins.`;
 
 export function loadWealthSoul(soulPath = DEFAULT_WEALTH_SOUL_PATH): string {
@@ -200,7 +180,10 @@ export async function buildWealthAgentSessionConfig(
   return {
     agentDir: options.agentDir,
     authStorage: options.authStorage,
-    customTools: createWealthTools(options.client),
+    customTools: createWealthTools(options.client, {
+      soulAuditPath: path.join(options.agentDir, "soul-updates.jsonl"),
+      ...(options.soulPath ? { soulPath: options.soulPath } : {}),
+    }),
     cwd: options.cwd,
     resourceLoader,
     sessionManager: options.sessionManager,
