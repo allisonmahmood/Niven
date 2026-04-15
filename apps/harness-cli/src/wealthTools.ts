@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 import { Type } from "@mariozechner/pi-ai";
 import {
@@ -9,6 +10,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 import { getApprovalRationale, hasExplicitApproval, WEALTH_APPROVAL_PREFIX } from "./approval.js";
+import { DEFAULT_WEALTH_SOUL_FALLBACK, defaultSoulAuditPath, writeSoulMarkdown } from "./soul.js";
 import type { WealthApiClient } from "./wealthApiClient.js";
 
 const nonEmptyString = Type.String({ minLength: 1 });
@@ -19,11 +21,17 @@ const executionModeSchema = Type.Optional(
 );
 const idempotencyKeySchema = Type.Optional(Type.String({ maxLength: 50, minLength: 1 }));
 const queryLimitSchema = Type.Optional(Type.Integer({ maximum: 500, minimum: 1 }));
+const defaultSoulPath = fileURLToPath(new URL("../SOUL.md", import.meta.url));
 
 type MutationParams = {
   readonly executionMode?: "execute" | "preview";
   readonly idempotencyKey?: string;
 };
+
+export interface CreateWealthToolsOptions {
+  readonly soulAuditPath?: string;
+  readonly soulPath?: string;
+}
 
 export const WEALTH_ALLOWED_TOOL_NAMES = [
   "list_accounts",
@@ -37,6 +45,7 @@ export const WEALTH_ALLOWED_TOOL_NAMES = [
   "submit_trade",
   "list_orders",
   "get_order",
+  "update_soul",
 ] as const;
 
 export const WEALTH_FORBIDDEN_TOOL_NAMES = [
@@ -90,7 +99,13 @@ function createReadTool<TParams extends ReturnType<typeof Type.Object>>(
   return defineTool(tool);
 }
 
-export function createWealthTools(client: WealthApiClient): ToolDefinition[] {
+export function createWealthTools(
+  client: WealthApiClient,
+  options: CreateWealthToolsOptions = {},
+): ToolDefinition[] {
+  const soulPath = options.soulPath ?? defaultSoulPath;
+  const soulAuditPath = options.soulAuditPath ?? defaultSoulAuditPath(soulPath);
+
   return [
     createReadTool({
       name: "list_accounts",
@@ -291,6 +306,37 @@ export function createWealthTools(client: WealthApiClient): ToolDefinition[] {
       async execute(_toolCallId, params) {
         const data = await client.getOrder(params.orderId);
         return makeResult("get_order", data);
+      },
+    }),
+    createReadTool({
+      name: "update_soul",
+      label: "Update Soul",
+      description:
+        "Rewrite SOUL.md for future sessions. Use this when your tone, persona, or behavioral guidance should change. Trust your judgment and write the updated SOUL.md content directly.",
+      parameters: Type.Object(
+        {
+          content: Type.String({ minLength: 1 }),
+          reason: Type.Optional(Type.String({ maxLength: 280, minLength: 1 })),
+        },
+        { additionalProperties: false },
+      ),
+      async execute(_toolCallId, params) {
+        const data = await writeSoulMarkdown({
+          auditPath: soulAuditPath,
+          content: params.content,
+          fallbackDocument: DEFAULT_WEALTH_SOUL_FALLBACK,
+          ...(params.reason ? { reason: params.reason } : {}),
+          soulPath,
+        });
+
+        return makeResult("update_soul", {
+          appliesOnNextSession: true,
+          auditPath: data.auditPath,
+          contentBytes: Buffer.byteLength(data.content, "utf8"),
+          futureSessionsOnly: true,
+          soulPath: data.soulPath,
+          updated: data.updated,
+        });
       },
     }),
   ];

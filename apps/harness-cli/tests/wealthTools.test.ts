@@ -1,10 +1,30 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { type ExtensionContext, SessionManager } from "@mariozechner/pi-coding-agent";
 import type { SandboxService } from "@niven/wealth-sandbox";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApiApp } from "../../wealth-api/src/app.js";
 import { WealthApiClient } from "../src/wealthApiClient.js";
 import { createWealthTools } from "../src/wealthTools.js";
+
+const tempDirs: string[] = [];
+
+async function createTempDir(prefix: string) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirs.splice(0).map(async (dir) => {
+      await rm(dir, { force: true, recursive: true });
+    }),
+  );
+});
 
 function createContext(messages: string[] = []): ExtensionContext {
   const sessionManager = SessionManager.inMemory("/tmp/pi-wealth-tools");
@@ -43,8 +63,10 @@ function createContext(messages: string[] = []): ExtensionContext {
   };
 }
 
-function getTool(name: string, client: object) {
-  const tool = createWealthTools(client as WealthApiClient).find((entry) => entry.name === name);
+function getTool(name: string, client: object, options?: Parameters<typeof createWealthTools>[1]) {
+  const tool = createWealthTools(client as WealthApiClient, options).find(
+    (entry) => entry.name === name,
+  );
 
   if (!tool) {
     throw new Error(`Missing tool ${name}`);
@@ -256,5 +278,49 @@ describe("wealth tools", () => {
         accountCount: 1,
       },
     });
+  });
+
+  it("updates SOUL.md without requiring an approval message", async () => {
+    const tempDir = await createTempDir("niven-wealth-tool-");
+    const soulPath = path.join(tempDir, "SOUL.md");
+    const auditPath = path.join(tempDir, "soul-updates.jsonl");
+    const tool = getTool("update_soul", {}, { soulAuditPath: auditPath, soulPath });
+
+    const result = await tool.execute(
+      "tool-5",
+      {
+        content: `# Niven
+
+You are Niven.
+
+## Voice
+- Be much more conversational.
+- Keep answers short unless detail is requested.`,
+      },
+      undefined,
+      undefined,
+      createContext(["Please be more direct."]),
+    );
+
+    expect(result.details).toEqual({
+      appliesOnNextSession: true,
+      auditPath,
+      contentBytes: Buffer.byteLength(
+        `# Niven
+
+You are Niven.
+
+## Voice
+- Be much more conversational.
+- Keep answers short unless detail is requested.
+`,
+        "utf8",
+      ),
+      futureSessionsOnly: true,
+      soulPath,
+      updated: true,
+    });
+    await expect(readFile(soulPath, "utf8")).resolves.toContain("- Be much more conversational.");
+    await expect(readFile(auditPath, "utf8")).resolves.toContain('"mode":"overwrite"');
   });
 });

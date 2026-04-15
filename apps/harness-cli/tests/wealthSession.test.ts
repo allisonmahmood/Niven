@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { AuthStorage, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
+import { writeSoulMarkdown } from "../src/soul.js";
 import type { WealthApiClient } from "../src/wealthApiClient.js";
 import {
   buildWealthAgentSessionConfig,
@@ -121,6 +122,7 @@ describe("wealth session resources", () => {
     );
     expect(soul).toBe(checkedInSoul);
     expect(soul).toContain("You are Niven.");
+    expect(soul).toContain("<!-- SOUL-EDITABLE-START -->");
   });
 
   it("falls back to the built-in soul when the file is missing", () => {
@@ -148,5 +150,51 @@ describe("wealth session resources", () => {
     for (const forbiddenToolName of WEALTH_FORBIDDEN_TOOL_NAMES) {
       expect(toolNames).not.toContain(forbiddenToolName);
     }
+  });
+
+  it("keeps the current loader prompt stable and applies soul updates on the next loader", async () => {
+    const cwd = await createTempDir("niven-wealth-cwd-");
+    const agentDir = await createTempDir("niven-wealth-agent-");
+    const settingsManager = SettingsManager.inMemory();
+    const soulPath = path.join(cwd, "SOUL.md");
+    const auditPath = path.join(agentDir, "soul-updates.jsonl");
+
+    await writeFile(soulPath, DEFAULT_WEALTH_SOUL_FALLBACK);
+
+    const currentLoader = createWealthResourceLoader({
+      agentDir,
+      cwd,
+      settingsManager,
+      soulPath,
+    });
+
+    await currentLoader.reload();
+    const beforePrompt = currentLoader.getSystemPrompt();
+
+    await writeSoulMarkdown({
+      auditPath,
+      content: `${DEFAULT_WEALTH_SOUL_FALLBACK}
+- Default to direct answers first on simple factual questions.
+`,
+      soulPath,
+    });
+
+    expect(currentLoader.getSystemPrompt()).toBe(beforePrompt);
+    expect(beforePrompt).not.toContain(
+      "Default to direct answers first on simple factual questions.",
+    );
+
+    const nextLoader = createWealthResourceLoader({
+      agentDir,
+      cwd,
+      settingsManager: SettingsManager.inMemory(),
+      soulPath,
+    });
+
+    await nextLoader.reload();
+
+    expect(nextLoader.getSystemPrompt()).toContain(
+      "Default to direct answers first on simple factual questions.",
+    );
   });
 });
