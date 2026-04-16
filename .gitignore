@@ -157,6 +157,11 @@ vite.config.ts.timestamp-*
 # Local planning docs
 plaid-pi-monorepo-build-sheet.md
 
+# Local AI assistant config and skill artifacts
+.agents/
+.claude/
+skills-lock.json
+
 # Pi local state
 .pi/sessions
 .pi/npm
