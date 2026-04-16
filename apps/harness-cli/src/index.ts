@@ -6,20 +6,20 @@ import { fileURLToPath } from "node:url";
 
 import { loginOpenAICodex } from "@mariozechner/pi-ai/oauth";
 import { AuthStorage, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
+import {
+  createWealthAgentSession,
+  getWealthHarnessPaths,
+  hasWealthMemory,
+} from "@niven/wealth-chat-bridge";
+import { createSandboxService } from "@niven/wealth-sandbox";
 
 import { createHarnessCli, openBrowser } from "./harness.js";
-import { hasWealthMemory } from "./memory.js";
-import { WealthApiClient } from "./wealthApiClient.js";
-import { createWealthAgentSession, getWealthHarnessPaths } from "./wealthSession.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
-const { agentDir, authPath, memoryPath, sessionCwd } = getWealthHarnessPaths(repoRoot);
+const { agentDir, authPath, memoryPath, sessionCwd, soulPath } = getWealthHarnessPaths(repoRoot);
 const authStorage = AuthStorage.create(authPath);
-const wealthApiClient = new WealthApiClient({
-  baseUrl: process.env.NIVEN_WEALTH_API_URL ?? "http://127.0.0.1:4321",
-  ...(process.env.NIVEN_API_TOKEN ? { apiToken: process.env.NIVEN_API_TOKEN } : {}),
-});
+const wealthService = createSandboxService();
 
 const app = createHarnessCli({
   agentDir,
@@ -50,12 +50,13 @@ const app = createHarnessCli({
 
     return createWealthAgentSession({
       agentDir,
-      client: wealthApiClient,
       cwd: options.cwd,
       authStorage,
       memoryPath,
+      service: wealthService,
       sessionManager: options.sessionManager as SessionManager,
       settingsManager: SettingsManager.inMemory(),
+      soulPath,
     });
   },
   createInMemorySessionManager: SessionManager.inMemory,

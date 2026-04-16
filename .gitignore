@@ -170,6 +170,10 @@ skills-lock.json
 # Local runtime state
 .niven/
 
+# Local browser automation artifacts
+output/playwright/
+**/.playwright-cli/
+
 # Local secrets and token stores
 *.sqlite
 *.sqlite-shm

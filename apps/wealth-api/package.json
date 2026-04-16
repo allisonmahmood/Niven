@@ -17,7 +17,9 @@
   },
   "dependencies": {
     "@hono/node-server": "1.19.14",
+    "@mariozechner/pi-coding-agent": "0.65.2",
     "@niven/shared": "workspace:*",
+    "@niven/wealth-chat-bridge": "workspace:*",
     "@niven/wealth-sandbox": "workspace:*",
     "hono": "4.12.12"
   }
