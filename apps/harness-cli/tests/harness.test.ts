@@ -438,6 +438,63 @@ describe("createHarnessCli", () => {
     expect(stdout.value).toContain("Response\nResponse\n");
   });
 
+  it("shows thinking and tool activity during chat turns", async () => {
+    const session = createFakeSession({
+      onPrompt: async (_prompt, emit) => {
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "thinking_start",
+          },
+        });
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "thinking_delta",
+            delta: "Need the balance tool.",
+          },
+        });
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "thinking_end",
+          },
+        });
+        emit({
+          type: "tool_execution_start",
+          toolName: "get_balance",
+          args: {
+            account: "checking",
+          },
+        });
+        emit({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            delta: "Here are your balances.\n",
+          },
+        });
+      },
+    });
+    const createSessionMock = vi.fn(async () => ({ session }));
+    const prompter = createPrompter(["show balances", "/exit"]);
+    const { app, stdout, stderr, authStorage } = createHarnessTestApp({
+      createPrompter: vi.fn(() => prompter),
+      createSession: createSessionMock,
+    });
+
+    authStorage.get.mockReturnValue({
+      type: "oauth",
+    });
+
+    const exitCode = await app.main(["node", "index.js", "chat"]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr.value).toContain("[thinking] Need the balance tool.");
+    expect(stderr.value).toContain('[tool] get_balance {"account":"checking"}');
+    expect(stdout.value).toContain("Here are your balances.\n");
+  });
+
   it("starts onboarding automatically and recreates the session after memory is saved", async () => {
     let memoryReady = false;
     const onboardingSession = createFakeSession({
