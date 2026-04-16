@@ -549,12 +549,7 @@ export class PiUiBridge {
               argsText: JSON.stringify(contentPart.arguments ?? {}),
               result: execution?.result ?? toolResult?.result,
               ...(toolIsError !== undefined ? { isError: toolIsError } : {}),
-              status:
-                execution?.status === "error"
-                  ? "incomplete"
-                  : execution?.status === "complete"
-                    ? "complete"
-                    : "complete",
+              status: this.getReconciledToolPartStatus(execution?.status, toolResult),
             },
           ];
         }
@@ -573,6 +568,21 @@ export class PiUiBridge {
 
     this.state.messages = nextMessages;
     this.rebuildToolPartLocations();
+  }
+
+  private getReconciledToolPartStatus(
+    executionStatus: PiToolExecutionState["status"] | undefined,
+    toolResult: { result: unknown; isError: boolean } | undefined,
+  ): ThreadMessageStatus {
+    if (executionStatus === "error" || toolResult?.isError) {
+      return "incomplete";
+    }
+
+    if (executionStatus === "complete" || toolResult) {
+      return "complete";
+    }
+
+    return "running";
   }
 
   private getAssistantFinalStatus(stopReason: StopReason | undefined): ThreadMessageStatus {

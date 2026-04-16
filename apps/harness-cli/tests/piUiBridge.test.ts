@@ -590,6 +590,86 @@ describe("PiUiBridge", () => {
     expect(getThreadAssistantText(assistant)).toBe("Partial answer");
   });
 
+  it("keeps unresolved tool calls nonterminal after agent_end reconciliation", () => {
+    const fakeSession = createFakeSession();
+    const bridge = createPiUiBridge({
+      session: fakeSession.session,
+      threadId: "thread-interrupted-tool",
+    });
+
+    const interruptedAssistant = createAssistantMessage({
+      timestamp: 3_000,
+      stopReason: "toolUse",
+    });
+
+    fakeSession.emit({ type: "agent_start" });
+    fakeSession.emit({
+      type: "message_update",
+      message: interruptedAssistant,
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 0,
+        toolCall: {
+          type: "toolCall",
+          id: "tool-2",
+          name: "move_money",
+          arguments: { amount: 50, from: "checking", to: "savings" },
+        },
+        partial: createAssistantMessage({
+          timestamp: 3_000,
+          stopReason: "toolUse",
+          content: [
+            {
+              type: "toolCall",
+              id: "tool-2",
+              name: "move_money",
+              arguments: { amount: 50, from: "checking", to: "savings" },
+            },
+          ],
+        }),
+      },
+    });
+
+    const finalMessages = [
+      createAssistantMessage({
+        timestamp: 3_000,
+        stopReason: "toolUse",
+        content: [
+          {
+            type: "toolCall",
+            id: "tool-2",
+            name: "move_money",
+            arguments: { amount: 50, from: "checking", to: "savings" },
+          },
+        ],
+      }),
+    ];
+    fakeSession.setMessages(finalMessages);
+    fakeSession.emit({
+      type: "agent_end",
+      messages: finalMessages,
+    });
+
+    const state = bridge.getState();
+    const assistant = getLatestAssistant(state);
+    const toolPart = assistant.content[0];
+
+    expect(state.toolExecutions["tool-2"]).toMatchObject({
+      toolCallId: "tool-2",
+      toolName: "move_money",
+      args: { amount: 50, from: "checking", to: "savings" },
+      status: "pending",
+    });
+    expect(toolPart).toEqual({
+      type: "tool-call",
+      toolCallId: "tool-2",
+      toolName: "move_money",
+      args: { amount: 50, from: "checking", to: "savings" },
+      argsText: '{"amount":50,"from":"checking","to":"savings"}',
+      status: "running",
+    });
+  });
+
   it("requires explicit steer or followUp while running and prefixes approvals", async () => {
     const fakeSession = createFakeSession();
     const bridge = createPiUiBridge({
