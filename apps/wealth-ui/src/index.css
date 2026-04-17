@@ -510,6 +510,10 @@ pre,
   background: var(--surface-muted);
 }
 
+.tool-inline {
+  min-width: 0;
+}
+
 .reasoning-card summary,
 .tool-header {
   display: flex;
@@ -563,7 +567,7 @@ pre,
   margin-top: 10px;
 }
 
-.composer textarea {
+.composer-input {
   width: 100%;
   min-height: 96px;
   resize: vertical;
@@ -575,7 +579,7 @@ pre,
   outline: none;
 }
 
-.composer textarea:focus {
+.composer-input:focus {
   border-color: var(--text);
 }
 
@@ -624,6 +628,73 @@ pre,
   border: 1px solid var(--line-strong);
   background: var(--surface);
   padding: 14px;
+}
+
+.visualization-card {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #fbf8f1 0%, #f4efe4 100%);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.visualization-card.is-pending {
+  background: linear-gradient(180deg, #f8f2e5 0%, #f1e5cb 100%);
+}
+
+.visualization-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.visualization-header h4 {
+  margin: 0.2rem 0 0;
+  font-size: 1.02rem;
+  line-height: 1.2;
+}
+
+.visualization-summary {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.visualization-canvas {
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.6), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.12));
+}
+
+.visualization-placeholder {
+  position: relative;
+  overflow: hidden;
+}
+
+.visualization-placeholder::before {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  background:
+    linear-gradient(90deg, rgba(18, 19, 16, 0.08) 0 1px, transparent 1px 25%) 0 0 / 56px 100%,
+    linear-gradient(rgba(18, 19, 16, 0.08) 0 1px, transparent 1px 25%) 0 0 / 100% 56px;
+}
+
+.visualization-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 38px 32px 42px;
+  background: linear-gradient(130deg, rgba(18, 19, 16, 0.08), rgba(18, 19, 16, 0.02));
+  clip-path: polygon(0 85%, 18% 62%, 34% 70%, 52% 40%, 70% 48%, 100% 0, 100% 100%, 0 100%);
+}
+
+.visualization-warnings {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--warning);
 }
 
 .alert-card {

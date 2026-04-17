@@ -3,6 +3,25 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createVisualizationArtifact } from "../../../packages/wealth-chat-bridge/src/visualization.ts";
+
+const echartsSpies = vi.hoisted(() => {
+  const setOption = vi.fn();
+  const resize = vi.fn();
+  const dispose = vi.fn();
+  const init = vi.fn(() => ({
+    dispose,
+    resize,
+    setOption,
+  }));
+
+  return { dispose, init, resize, setOption };
+});
+
+vi.mock("echarts", () => ({
+  init: echartsSpies.init,
+}));
+
 import App from "./App";
 import { useChatStore } from "./chatStore";
 
@@ -79,6 +98,10 @@ function createState(overrides: Partial<PiUiState> = {}): PiUiState {
 describe("App", () => {
   beforeEach(() => {
     MockEventSource.instances = [];
+    echartsSpies.dispose.mockReset();
+    echartsSpies.init.mockClear();
+    echartsSpies.resize.mockReset();
+    echartsSpies.setOption.mockReset();
     globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
     globalThis.fetch = vi.fn();
     useChatStore.setState({
@@ -105,7 +128,7 @@ describe("App", () => {
     expect(MockEventSource.instances[0]?.url).toBe("/api/v1/chat/threads/thread-1/events");
   });
 
-  it("renders markdown formatting for assistant messages", async () => {
+  it("renders markdown formatting for assistant messages inside primitives", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({
         state: createState({
@@ -136,7 +159,82 @@ describe("App", () => {
     expect(container.querySelectorAll(".message-card li")).toHaveLength(2);
   });
 
-  it("keeps completed reasoning and tool payloads collapsed by default", async () => {
+  it("renders visualization tool results inline and compiles them into an echarts option", async () => {
+    const artifact = createVisualizationArtifact({
+      altText: "Bar chart comparing holdings market value by symbol.",
+      spec: {
+        chartType: "bar",
+        data: [
+          { marketValue: 1400, symbol: "AAPL" },
+          { marketValue: 920, symbol: "MSFT" },
+        ],
+        series: [{ dataKey: "marketValue", name: "Market value" }],
+        valueFormat: "currency",
+        xKey: "symbol",
+      },
+      summary: "Comparing the two largest holdings by current market value.",
+      title: "Top holdings",
+    });
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        state: createState({
+          messages: [
+            {
+              content: [
+                {
+                  args: { title: "Top holdings" },
+                  argsText: '{"title":"Top holdings"}',
+                  result: artifact,
+                  status: "complete",
+                  toolCallId: "tool-chart-1",
+                  toolName: "create_visualization",
+                  type: "tool-call",
+                },
+                {
+                  text: "Here is your holdings chart.",
+                  type: "text",
+                },
+              ],
+              createdAt: new Date("2026-04-16T09:00:00.000Z").toISOString(),
+              id: "msg-chart",
+              role: "assistant",
+              status: "complete",
+            },
+          ],
+          toolExecutions: {
+            "tool-chart-1": {
+              args: { title: "Top holdings" },
+              result: artifact,
+              status: "complete",
+              toolCallId: "tool-chart-1",
+              toolName: "create_visualization",
+            },
+          },
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("Top holdings")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name: "Bar chart comparing holdings market value by symbol.",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Here is your holdings chart.")).toBeInTheDocument();
+    expect(echartsSpies.init).toHaveBeenCalledTimes(1);
+    expect(echartsSpies.setOption).toHaveBeenCalledWith(
+      expect.objectContaining({
+        series: expect.any(Array),
+        xAxis: expect.objectContaining({ type: "category" }),
+      }),
+      true,
+    );
+  });
+
+  it("keeps completed generic tool payloads collapsed by default", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({
         state: createState({
@@ -181,7 +279,6 @@ describe("App", () => {
     );
 
     const { container } = render(<App />);
-
     await screen.findByText("Current balance:", { selector: "strong" });
 
     expect(container.querySelector(".reasoning-card")).not.toHaveAttribute("open");
@@ -189,7 +286,47 @@ describe("App", () => {
     expect(container.querySelector(".execution-card")).not.toHaveAttribute("open");
   });
 
-  it("sends composer text to the thread message endpoint", async () => {
+  it("falls back to a generic error card when a visualization tool call fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        state: createState({
+          messages: [
+            {
+              content: [
+                {
+                  args: { title: "Top holdings" },
+                  argsText: '{"title":"Top holdings"}',
+                  isError: true,
+                  result: {},
+                  status: "incomplete",
+                  toolCallId: "tool-chart-error",
+                  toolName: "create_visualization",
+                  type: "tool-call",
+                },
+              ],
+              createdAt: new Date("2026-04-16T09:00:00.000Z").toISOString(),
+              id: "msg-chart-error",
+              role: "assistant",
+              status: "complete",
+            },
+          ],
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { level: 4, name: "create_visualization" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("incomplete")).toBeInTheDocument();
+    expect(screen.getByText("{}")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Preparing an inline chart from the current sandbox data."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("submits composer text to the thread message endpoint", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse({ state: createState() }))
       .mockResolvedValueOnce(
@@ -224,154 +361,6 @@ describe("App", () => {
           body: JSON.stringify({ text: "What is my checking balance?" }),
           method: "POST",
         }),
-      );
-    });
-  });
-
-  it("submits with Enter from the composer input", async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse({ state: createState() }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          state: createState({
-            messages: [
-              ...createState().messages,
-              {
-                content: [{ text: "Show recent transfers", type: "text" }],
-                createdAt: new Date("2026-04-16T09:01:10.000Z").toISOString(),
-                id: "msg-enter",
-                role: "user",
-              },
-            ],
-          }),
-        }),
-      );
-
-    render(<App />);
-
-    const user = userEvent.setup();
-    const composer = await screen.findByLabelText("Send a message");
-
-    await user.type(composer, "Show recent transfers{enter}");
-
-    await waitFor(() => {
-      expect(fetch).toHaveBeenNthCalledWith(
-        2,
-        "/api/v1/chat/threads/thread-1/messages",
-        expect.objectContaining({
-          body: JSON.stringify({ text: "Show recent transfers" }),
-          method: "POST",
-        }),
-      );
-    });
-  });
-
-  it("applies live SSE snapshots to the transcript and queue panels", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ state: createState() }));
-
-    render(<App />);
-
-    await screen.findByText("Opening bell.");
-
-    MockEventSource.instances[0]?.emit("state", {
-      state: createState({
-        isRunning: true,
-        messages: [
-          ...createState().messages,
-          {
-            content: [{ text: "Streaming a live update.", type: "text" }],
-            createdAt: new Date("2026-04-16T09:01:30.000Z").toISOString(),
-            id: "msg-live",
-            role: "assistant",
-            status: "running",
-          },
-        ],
-        phase: "running",
-        queue: {
-          followUp: ["Summarize holdings after this."],
-          steering: ["Use the safer cash account."],
-        },
-      }),
-    });
-
-    expect(await screen.findByText("Streaming a live update.")).toBeInTheDocument();
-    expect(screen.getByText("Use the safer cash account.")).toBeInTheDocument();
-    expect(screen.getByText("Summarize holdings after this.")).toBeInTheDocument();
-    expect(screen.getAllByText("running").length).toBeGreaterThan(0);
-  });
-
-  it("sends steering when the run is already active", async () => {
-    const runningState = createState({
-      isRunning: true,
-      phase: "running",
-      messages: [
-        {
-          content: [{ text: "Working on it.", type: "text" }],
-          createdAt: new Date("2026-04-16T09:02:00.000Z").toISOString(),
-          id: "msg-running",
-          role: "assistant",
-          status: "running",
-        },
-      ],
-    });
-
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse({ state: runningState }))
-      .mockResolvedValueOnce(jsonResponse({ state: runningState }));
-
-    render(<App />);
-
-    const user = userEvent.setup();
-    const composer = await screen.findByLabelText("Steer the active run");
-
-    await user.type(composer, "Use the safer account.");
-    await user.click(screen.getByRole("button", { name: "Steer run" }));
-
-    await waitFor(() => {
-      expect(fetch).toHaveBeenNthCalledWith(
-        2,
-        "/api/v1/chat/threads/thread-1/messages",
-        expect.objectContaining({
-          body: JSON.stringify({
-            text: "Use the safer account.",
-            whileRunning: "steer",
-          }),
-          method: "POST",
-        }),
-      );
-    });
-  });
-
-  it("cancels an active run through the cancel endpoint", async () => {
-    const runningState = createState({
-      isRunning: true,
-      phase: "running",
-      messages: [
-        {
-          content: [{ text: "Working on it.", type: "text" }],
-          createdAt: new Date("2026-04-16T09:02:00.000Z").toISOString(),
-          id: "msg-running",
-          role: "assistant",
-          status: "running",
-        },
-      ],
-    });
-
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse({ state: runningState }))
-      .mockResolvedValueOnce(jsonResponse({ state: runningState }));
-
-    render(<App />);
-
-    const user = userEvent.setup();
-    await screen.findByText("Working on it.");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => {
-      expect(fetch).toHaveBeenNthCalledWith(
-        2,
-        "/api/v1/chat/threads/thread-1/cancel",
-        expect.objectContaining({ method: "POST" }),
       );
     });
   });

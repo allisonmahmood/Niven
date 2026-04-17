@@ -13,6 +13,7 @@ import {
 import { getApprovalRationale, hasExplicitApproval, WEALTH_APPROVAL_PREFIX } from "./approval.js";
 import { defaultMemoryAuditPath, defaultWealthMemoryPath, writeMemoryMarkdown } from "./memory.js";
 import { DEFAULT_WEALTH_SOUL_FALLBACK, defaultSoulAuditPath, writeSoulMarkdown } from "./soul.js";
+import { createVisualizationArtifact } from "./visualization.js";
 import type { WealthToolService } from "./wealthService.js";
 
 const nonEmptyString = Type.String({ minLength: 1 });
@@ -23,6 +24,60 @@ const executionModeSchema = Type.Optional(
 );
 const idempotencyKeySchema = Type.Optional(Type.String({ maxLength: 50, minLength: 1 }));
 const queryLimitSchema = Type.Optional(Type.Integer({ maximum: 500, minimum: 1 }));
+const visualizationChartTypeSchema = Type.Union([
+  Type.Literal("area"),
+  Type.Literal("bar"),
+  Type.Literal("line"),
+  Type.Literal("pie"),
+  Type.Literal("scatter"),
+]);
+const visualizationValueFormatSchema = Type.Optional(
+  Type.Union([Type.Literal("currency"), Type.Literal("number"), Type.Literal("percent")]),
+);
+const visualizationPrimitiveSchema = Type.Union([
+  Type.String(),
+  Type.Number(),
+  Type.Boolean(),
+  Type.Null(),
+]);
+const visualizationDataRowSchema = Type.Record(Type.String(), visualizationPrimitiveSchema);
+const visualizationSeriesSchema = Type.Object(
+  {
+    color: Type.Optional(nonEmptyString),
+    dataKey: nonEmptyString,
+    name: nonEmptyString,
+    smooth: Type.Optional(Type.Boolean()),
+    stack: Type.Optional(nonEmptyString),
+    type: Type.Optional(visualizationChartTypeSchema),
+    yAxis: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("right")])),
+  },
+  { additionalProperties: false },
+);
+const visualizationSortSchema = Type.Object(
+  {
+    by: nonEmptyString,
+    order: Type.Union([Type.Literal("asc"), Type.Literal("desc")]),
+  },
+  { additionalProperties: false },
+);
+const visualizationSpecSchema = Type.Object(
+  {
+    chartType: visualizationChartTypeSchema,
+    data: Type.Array(visualizationDataRowSchema, { maxItems: 200, minItems: 1 }),
+    donut: Type.Optional(Type.Boolean()),
+    labelKey: Type.Optional(nonEmptyString),
+    legend: Type.Optional(Type.Boolean()),
+    series: Type.Array(visualizationSeriesSchema, { maxItems: 12, minItems: 1 }),
+    showDataZoom: Type.Optional(Type.Boolean()),
+    sort: Type.Optional(visualizationSortSchema),
+    valueFormat: visualizationValueFormatSchema,
+    xAxisLabel: Type.Optional(nonEmptyString),
+    xKey: Type.Optional(nonEmptyString),
+    yAxisLabel: Type.Optional(nonEmptyString),
+    yAxisLabelRight: Type.Optional(nonEmptyString),
+  },
+  { additionalProperties: false },
+);
 type MutationParams = {
   readonly executionMode?: "execute" | "preview";
   readonly idempotencyKey?: string;
@@ -42,6 +97,7 @@ export const WEALTH_ALLOWED_TOOL_NAMES = [
   "list_account_activity",
   "list_holdings",
   "list_securities",
+  "create_visualization",
   "move_cash",
   "list_cash_transfers",
   "get_cash_transfer",
@@ -194,6 +250,32 @@ export function createWealthTools(
           query: params.query,
         });
         return makeResult("list_securities", data);
+      },
+    }),
+    createReadTool({
+      name: "create_visualization",
+      label: "Create Visualization",
+      description:
+        "Create a structured chart or graph for inline chat rendering after you have gathered the relevant sandbox data. Use this when the user asks for a visual comparison, composition, trend, or distribution.",
+      parameters: Type.Object(
+        {
+          altText: nonEmptyString,
+          spec: visualizationSpecSchema,
+          summary: nonEmptyString,
+          title: Type.Optional(nonEmptyString),
+          warnings: Type.Optional(Type.Array(nonEmptyString, { maxItems: 8 })),
+        },
+        { additionalProperties: false },
+      ),
+      async execute(_toolCallId, params) {
+        const artifact = createVisualizationArtifact({
+          altText: params.altText,
+          spec: params.spec,
+          summary: params.summary,
+          ...(params.title ? { title: params.title } : {}),
+          ...(params.warnings ? { warnings: params.warnings } : {}),
+        });
+        return makeResult("create_visualization", artifact as unknown as Record<string, unknown>);
       },
     }),
     createReadTool({

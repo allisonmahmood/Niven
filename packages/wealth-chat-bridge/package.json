@@ -13,6 +13,10 @@
     "./pi-ui": {
       "types": "./dist/piUiBridge.d.ts",
       "default": "./dist/piUiBridge.js"
+    },
+    "./visualization": {
+      "types": "./dist/visualization.d.ts",
+      "default": "./dist/visualization.js"
     }
   },
   "scripts": {

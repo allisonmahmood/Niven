@@ -208,21 +208,38 @@ function normalizeUserContent(message: unknown): MessagePart[] {
   });
 }
 
-function deriveToolResultPayload(message: unknown): unknown {
-  if (!isToolResultMessage(message)) {
-    return undefined;
-  }
-
-  if ("details" in message && message.details !== undefined) {
-    return message.details;
-  }
-
-  const text = (Array.isArray(message.content) ? message.content : [])
+function getTextPayloadFromContent(content: unknown): string | undefined {
+  const text = (Array.isArray(content) ? content : [])
     .filter(isTextContentPart)
     .map((contentPart) => contentPart.text)
     .join("");
 
   return text.length > 0 ? text : undefined;
+}
+
+function normalizeToolResultValue(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const hasAgentToolEnvelopeShape = "details" in value || Array.isArray(value.content);
+  if (!hasAgentToolEnvelopeShape) {
+    return value;
+  }
+
+  if ("details" in value && value.details !== undefined) {
+    return value.details;
+  }
+
+  return getTextPayloadFromContent(value.content);
+}
+
+function deriveToolResultPayload(message: unknown): unknown {
+  if (!isToolResultMessage(message)) {
+    return undefined;
+  }
+
+  return normalizeToolResultValue(message);
 }
 
 function cloneState<T>(value: T): T {
@@ -397,19 +414,23 @@ export class PiUiBridge {
         });
         break;
       case "tool_execution_end":
-        this.updateToolExecution(event.toolCallId, {
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          result: event.result,
-          isError: event.isError,
-          status: event.isError ? "error" : "complete",
-        });
-        this.updateToolPart(event.toolCallId, (part) => {
-          part.toolName = event.toolName;
-          part.result = event.result;
-          part.isError = event.isError;
-          part.status = event.isError ? "incomplete" : "complete";
-        });
+        {
+          const result = normalizeToolResultValue(event.result);
+
+          this.updateToolExecution(event.toolCallId, {
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            result,
+            isError: event.isError,
+            status: event.isError ? "error" : "complete",
+          });
+          this.updateToolPart(event.toolCallId, (part) => {
+            part.toolName = event.toolName;
+            part.result = result;
+            part.isError = event.isError;
+            part.status = event.isError ? "incomplete" : "complete";
+          });
+        }
         break;
       case "auto_retry_start":
         this.phaseBeforeRetry = this.state.phase === "compacting" ? "running" : this.state.phase;
@@ -503,8 +524,9 @@ export class PiUiBridge {
       }
 
       const toolExecution = this.state.toolExecutions[message.toolCallId];
+      const executionResult = normalizeToolResultValue(toolExecution?.result);
       toolResultsById.set(message.toolCallId, {
-        result: toolExecution?.result ?? deriveToolResultPayload(message),
+        result: executionResult ?? deriveToolResultPayload(message),
         isError: message.isError ?? toolExecution?.isError ?? false,
       });
     }
@@ -542,6 +564,7 @@ export class PiUiBridge {
           const execution = this.state.toolExecutions[contentPart.id];
           const toolResult = toolResultsById.get(contentPart.id);
           const toolIsError = execution?.isError ?? toolResult?.isError;
+          const executionResult = normalizeToolResultValue(execution?.result);
 
           return [
             {
@@ -550,7 +573,7 @@ export class PiUiBridge {
               toolName: contentPart.name,
               args: execution?.args ?? contentPart.arguments,
               argsText: JSON.stringify(contentPart.arguments ?? {}),
-              result: execution?.result ?? toolResult?.result,
+              result: executionResult ?? toolResult?.result,
               ...(toolIsError !== undefined ? { isError: toolIsError } : {}),
               status: this.getReconciledToolPartStatus(execution?.status, toolResult),
             },
@@ -895,7 +918,8 @@ export class PiUiBridge {
       }
 
       const existing = this.state.toolExecutions[toolResult.toolCallId];
-      const result = existing?.result ?? deriveToolResultPayload(toolResult);
+      const result =
+        normalizeToolResultValue(existing?.result) ?? deriveToolResultPayload(toolResult);
       const status = toolResult.isError ? "error" : "complete";
 
       this.updateToolExecution(toolResult.toolCallId, {

@@ -1,20 +1,23 @@
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import {
+  AssistantRuntimeProvider,
+  AuiIf,
+  ComposerPrimitive,
+  MessagePrimitive,
+  makeAssistantToolUI,
+  ThreadPrimitive,
+  useAuiState,
+} from "@assistant-ui/react";
 import type {
   PiToolExecutionState,
   PiUiState,
   ThreadMessage,
-  ThreadToolCallPart,
 } from "@niven/wealth-chat-bridge/pi-ui";
-import { type FormEvent, type KeyboardEvent, startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect } from "react";
 
+import { isVisualizationArtifact } from "../../../packages/wealth-chat-bridge/src/visualization.ts";
 import { useWealthAssistantRuntime } from "./assistantRuntime";
-import {
-  cancelThread,
-  createThread,
-  fetchThreadState,
-  formatTransportError,
-  sendThreadMessage,
-} from "./chatApi";
+import { ChatVisualization } from "./ChatVisualization";
+import { createThread, fetchThreadState, formatTransportError } from "./chatApi";
 import { useChatStore } from "./chatStore";
 import { MarkdownBlock, normalizeChatMarkdown } from "./MarkdownBlock";
 
@@ -29,21 +32,8 @@ function formatJson(value: unknown): string {
   }
 }
 
-function getMessagePreview(message: ThreadMessage): string {
-  return message.content
-    .flatMap((part) => {
-      if (part.type === "text" || part.type === "reasoning") {
-        return [part.text];
-      }
-
-      if (part.type === "tool-call") {
-        return [`Used ${part.toolName}`];
-      }
-
-      return [];
-    })
-    .join("\n")
-    .trim();
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function truncateMiddle(value: string, visible = 8): string {
@@ -103,10 +93,7 @@ function summarizePayload(value: unknown): string {
   return String(value);
 }
 
-function getPartDefaultOpen(
-  status: ThreadToolCallPart["status"],
-  isError: boolean | undefined,
-): boolean {
+function getPartDefaultOpen(status: string, isError: boolean | undefined): boolean {
   return status === "running" || status === "requires-action" || Boolean(isError);
 }
 
@@ -269,29 +256,83 @@ function LiveToolRail(props: { executions: Record<string, PiToolExecutionState> 
   );
 }
 
-function ToolCallCard({ part }: { part: ThreadToolCallPart }) {
+function VisualizationPlaceholder(props: { title?: string }) {
+  return (
+    <section className="visualization-card is-pending">
+      <header className="visualization-header">
+        <div>
+          <span className="panel-kicker">Chart</span>
+          <h4>{props.title ?? "Building visualization"}</h4>
+        </div>
+        <span className="tool-status tool-status-running">running</span>
+      </header>
+      <p className="visualization-summary">
+        Preparing an inline chart from the current sandbox data.
+      </p>
+      <div className="visualization-canvas visualization-placeholder" />
+    </section>
+  );
+}
+
+const VisualizationToolUI = makeAssistantToolUI({
+  render: ({ args, argsText, isError, result, status, toolName }) => {
+    if (isVisualizationArtifact(result)) {
+      return <ChatVisualization artifact={result} pending={status.type === "running"} />;
+    }
+
+    if (status.type !== "running") {
+      return (
+        <GenericToolCallCard
+          args={args}
+          argsText={argsText}
+          isError={isError}
+          result={result}
+          status={isError ? "incomplete" : status.type}
+          toolName={toolName}
+        />
+      );
+    }
+
+    const title =
+      isRecord(args) && typeof args.title === "string" && args.title.trim().length > 0
+        ? args.title
+        : undefined;
+
+    return <VisualizationPlaceholder title={title} />;
+  },
+  toolName: "create_visualization",
+});
+
+function GenericToolCallCard(props: {
+  args: unknown;
+  argsText: string;
+  isError?: boolean;
+  result?: unknown;
+  status: string;
+  toolName: string;
+}) {
   return (
     <details
-      className={`tool-card tool-${part.status}`}
-      open={getPartDefaultOpen(part.status, part.isError)}
+      className={`tool-card tool-${props.status}`}
+      open={getPartDefaultOpen(props.status, props.isError)}
     >
       <summary className="tool-header">
         <div>
           <span className="panel-kicker">Tool Call</span>
-          <h4>{part.toolName}</h4>
-          <p className="tool-preview">{summarizePayload(part.result ?? part.args)}</p>
+          <h4>{props.toolName}</h4>
+          <p className="tool-preview">{summarizePayload(props.result ?? props.args)}</p>
         </div>
-        <span className={`tool-status tool-status-${part.status}`}>{part.status}</span>
+        <span className={`tool-status tool-status-${props.status}`}>{props.status}</span>
       </summary>
       <div className="tool-grid">
         <div>
           <span className="panel-kicker">Arguments</span>
-          <pre>{part.argsText || formatJson(part.args)}</pre>
+          <pre>{props.argsText || formatJson(props.args)}</pre>
         </div>
         <div>
-          <span className="panel-kicker">{part.isError ? "Error" : "Result"}</span>
+          <span className="panel-kicker">{props.isError ? "Error" : "Result"}</span>
           <pre>
-            {part.result !== undefined ? formatJson(part.result) : "Awaiting tool result..."}
+            {props.result !== undefined ? formatJson(props.result) : "Awaiting tool result..."}
           </pre>
         </div>
       </div>
@@ -299,172 +340,108 @@ function ToolCallCard({ part }: { part: ThreadToolCallPart }) {
   );
 }
 
-function TranscriptMessage({ message }: { message: ThreadMessage }) {
-  const preview = getMessagePreview(message);
+function ThreadMessageCard() {
+  const createdAt = useAuiState((store) => store.message.createdAt);
+  const role = useAuiState((store) => store.message.role);
+  const status = useAuiState((store) => store.message.status);
+  const statusLabel = status?.type ?? "complete";
 
   return (
-    <article className={`message-card role-${message.role}`}>
+    <MessagePrimitive.Root className={`message-card role-${role}`}>
       <header className="message-header">
         <div>
-          <span className="message-role">{message.role === "assistant" ? "Niven" : "You"}</span>
-          <time dateTime={message.createdAt}>
-            {new Date(message.createdAt).toLocaleTimeString([], {
+          <span className="message-role">{role === "assistant" ? "Niven" : "You"}</span>
+          <time dateTime={createdAt.toISOString()}>
+            {createdAt.toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
             })}
           </time>
         </div>
-        {message.role === "assistant" ? (
-          <span className={`message-status message-status-${message.status}`}>
-            {message.status}
-          </span>
+        {role === "assistant" ? (
+          <span className={`message-status message-status-${statusLabel}`}>{statusLabel}</span>
         ) : null}
       </header>
       <div className="message-body">
-        {message.content.length === 0 ? (
-          <p className="muted-copy">{preview || "No content."}</p>
-        ) : null}
-        {message.content.map((part, index) => {
-          const key = `${message.id}-${part.type}-${index}`;
+        <MessagePrimitive.Parts>
+          {({ part }) => {
+            if (part.type === "text") {
+              return <MarkdownBlock text={part.text} />;
+            }
 
-          if (part.type === "text") {
-            return <MarkdownBlock key={key} text={part.text} />;
-          }
+            if (part.type === "reasoning") {
+              return (
+                <details className="reasoning-card" open={part.status.type === "running"}>
+                  <summary>
+                    <span>Reasoning</span>
+                    <span className="reasoning-preview">{summarizePayload(part.text)}</span>
+                  </summary>
+                  <MarkdownBlock text={part.text} />
+                </details>
+              );
+            }
 
-          if (part.type === "reasoning") {
-            return (
-              <details
-                className="reasoning-card"
-                key={key}
-                open={message.role === "assistant" && message.status === "running"}
-              >
-                <summary>
-                  <span>Reasoning</span>
-                  <span className="reasoning-preview">{summarizePayload(part.text)}</span>
-                </summary>
-                <MarkdownBlock text={part.text} />
-              </details>
-            );
-          }
+            if (part.type === "tool-call") {
+              if (part.toolUI) {
+                return <div className="tool-inline">{part.toolUI}</div>;
+              }
 
-          return <ToolCallCard key={key} part={part} />;
-        })}
+              return (
+                <GenericToolCallCard
+                  args={part.args}
+                  argsText={part.argsText}
+                  isError={part.isError}
+                  result={part.result}
+                  status={part.status.type}
+                  toolName={part.toolName}
+                />
+              );
+            }
+
+            return null;
+          }}
+        </MessagePrimitive.Parts>
       </div>
-    </article>
+    </MessagePrimitive.Root>
   );
 }
 
-function Composer() {
+function ChatComposer() {
   const threadId = useChatStore((store) => store.state?.threadId);
   const isRunning = useChatStore((store) => store.state?.isRunning ?? false);
-  const setError = useChatStore((store) => store.setError);
-  const setState = useChatStore((store) => store.setState);
-  const [draft, setDraft] = useState("");
-  const [isSending, setIsSending] = useState(false);
-
-  const submit = async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    const text = draft.trim();
-
-    if (!text || !threadId || isSending) {
-      return;
-    }
-
-    setDraft("");
-    setIsSending(true);
-
-    try {
-      const nextState = await sendThreadMessage(threadId, {
-        text,
-        ...(isRunning ? { whileRunning: "steer" as const } : {}),
-      });
-      startTransition(() => {
-        setState(nextState);
-        setError(null);
-      });
-    } catch (error) {
-      setDraft(text);
-      setError(formatTransportError(error));
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handleCancel = async () => {
-    if (!threadId) {
-      return;
-    }
-
-    try {
-      const nextState = await cancelThread(threadId);
-      startTransition(() => {
-        setState(nextState);
-        setError(null);
-      });
-    } catch (error) {
-      setError(formatTransportError(error));
-    }
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Escape" && isRunning && threadId) {
-      event.preventDefault();
-      void handleCancel();
-      return;
-    }
-
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
-      return;
-    }
-
-    event.preventDefault();
-    void submit();
-  };
 
   return (
-    <form className="composer" onSubmit={(event) => void submit(event)}>
+    <ComposerPrimitive.Root className="composer">
       <label className="composer-label" htmlFor="wealth-composer">
         {isRunning ? "Steer the active run" : "Send a message"}
       </label>
       <div className="composer-shell">
-        <textarea
+        <ComposerPrimitive.Input
           aria-describedby="composer-hint"
           className="composer-input"
-          disabled={!threadId || isSending}
+          disabled={!threadId}
           id="wealth-composer"
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleKeyDown}
           placeholder={
             isRunning
               ? "Add steering while the harness is running..."
               : "Ask Niven about balances, transfers, holdings, or trades..."
           }
-          rows={3}
-          value={draft}
+          submitMode="enter"
         />
         <div className="composer-actions">
-          <button
-            className="ghost-button"
-            disabled={!isRunning || !threadId}
-            onClick={() => void handleCancel()}
-            type="button"
-          >
-            Cancel
-          </button>
-          <button
-            className="primary-button"
-            disabled={!threadId || !draft.trim() || isSending}
-            type="submit"
-          >
+          <AuiIf condition={({ thread }) => thread.isRunning}>
+            <ComposerPrimitive.Cancel className="ghost-button">Cancel</ComposerPrimitive.Cancel>
+          </AuiIf>
+          <ComposerPrimitive.Send className="primary-button" disabled={!threadId}>
             {isRunning ? "Steer run" : "Send"}
-          </button>
+          </ComposerPrimitive.Send>
         </div>
       </div>
       <p className="composer-hint" id="composer-hint">
         Use <code>APPROVE:</code> at the start of a message when you want to execute a live
         mutation.
       </p>
-    </form>
+    </ComposerPrimitive.Root>
   );
 }
 
@@ -567,31 +544,40 @@ function AppShell() {
         </section>
       </aside>
 
-      <main className="transcript-panel">
-        <header className="transcript-header">
-          <div>
-            <p className="panel-kicker">Current Harness Chat</p>
-            <h2>Live transcript</h2>
-          </div>
-          <PhaseBadge phase={state?.phase} />
-        </header>
-
-        <section className="transcript-list" aria-live="polite">
-          {transcript.length === 0 ? (
-            <div className="empty-state">
-              <h3>Spinning up the harness thread</h3>
-              <p>
-                If no durable memory exists yet, Niven will begin onboarding automatically before
-                normal wealth assistance.
-              </p>
+      <ThreadPrimitive.Root asChild>
+        <main className="transcript-panel">
+          <header className="transcript-header">
+            <div>
+              <p className="panel-kicker">Current Harness Chat</p>
+              <h2>Live transcript</h2>
             </div>
-          ) : (
-            transcript.map((message) => <TranscriptMessage key={message.id} message={message} />)
-          )}
-        </section>
+            <PhaseBadge phase={state?.phase} />
+          </header>
 
-        <Composer />
-      </main>
+          <ThreadPrimitive.Viewport aria-live="polite" className="transcript-list">
+            <ThreadPrimitive.Empty>
+              <div className="empty-state">
+                <h3>Spinning up the harness thread</h3>
+                <p>
+                  If no durable memory exists yet, Niven will begin onboarding automatically before
+                  normal wealth assistance.
+                </p>
+              </div>
+            </ThreadPrimitive.Empty>
+
+            {transcript.length > 0 ? (
+              <ThreadPrimitive.Messages
+                components={{
+                  AssistantMessage: ThreadMessageCard,
+                  UserMessage: ThreadMessageCard,
+                }}
+              />
+            ) : null}
+          </ThreadPrimitive.Viewport>
+
+          <ChatComposer />
+        </main>
+      </ThreadPrimitive.Root>
     </div>
   );
 }
@@ -602,6 +588,7 @@ export default function App() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <VisualizationToolUI />
       <AppShell />
     </AssistantRuntimeProvider>
   );

@@ -3,6 +3,7 @@ export * from "./memory.js";
 export * from "./piUiBridge.js";
 export * from "./soul.js";
 export * from "./thread.js";
+export * from "./visualization.js";
 export * from "./wealthService.js";
 export * from "./wealthSession.js";
 export * from "./wealthTools.js";
