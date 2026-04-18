@@ -116,22 +116,31 @@ describe("wealth tools", () => {
   it("rejects invalid visualization requests before returning tool details", async () => {
     const tool = getTool("create_visualization");
 
-    await expect(
-      tool.execute(
-        "tool-chart-2",
-        {
-          altText: "Pie chart comparing holdings.",
-          spec: {
-            chartType: "pie",
-            data: [{ marketValue: 1400, symbol: "AAPL" }],
-            series: [{ dataKey: "marketValue", name: "Market value" }],
-          },
-          summary: "Missing labelKey.",
+    const result = await tool.execute(
+      "tool-chart-2",
+      {
+        altText: "Pie chart comparing holdings.",
+        spec: {
+          chartType: "pie",
+          data: [{ marketValue: 1400, symbol: "AAPL" }],
+          series: [{ dataKey: "marketValue", name: "Market value" }],
         },
-        undefined,
-        undefined,
-        createContext(["Show my holdings as a pie chart"]),
-      ),
-    ).rejects.toThrow(/labelKey/i);
+        summary: "Missing labelKey.",
+      },
+      undefined,
+      undefined,
+      createContext(["Show my holdings as a pie chart"]),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({
+      error: "Visualization validation failed.",
+      retryable: true,
+    });
+    expect((result.details as { issues: string[] }).issues).toEqual(
+      expect.arrayContaining([expect.stringMatching(/labelKey/i)]),
+    );
+    expect(result.content[0]?.type).toBe("text");
+    expect((result.content[0] as { text: string }).text).toMatch(/labelKey/i);
   });
 });

@@ -13,7 +13,7 @@ import {
 import { getApprovalRationale, hasExplicitApproval, WEALTH_APPROVAL_PREFIX } from "./approval.js";
 import { defaultMemoryAuditPath, defaultWealthMemoryPath, writeMemoryMarkdown } from "./memory.js";
 import { DEFAULT_WEALTH_SOUL_FALLBACK, defaultSoulAuditPath, writeSoulMarkdown } from "./soul.js";
-import { createVisualizationArtifact } from "./visualization.js";
+import { createVisualizationArtifact, VisualizationValidationError } from "./visualization.js";
 import type { WealthToolService } from "./wealthService.js";
 
 const nonEmptyString = Type.String({ minLength: 1 });
@@ -127,6 +127,77 @@ function makeResult(
   return {
     content: [{ type: "text", text: buildToolText(toolName, payload) }],
     details: payload,
+  };
+}
+
+function buildToolErrorText(
+  toolName: string,
+  payload: {
+    error: string;
+    issues?: readonly string[];
+    retryHint?: string;
+  },
+): string {
+  const lines = [`${toolName} failed.`, payload.error];
+
+  if (payload.issues && payload.issues.length > 0) {
+    lines.push("Issues:");
+    lines.push(...payload.issues.map((issue) => `- ${issue}`));
+  }
+
+  if (payload.retryHint) {
+    lines.push(`Retry hint: ${payload.retryHint}`);
+  }
+
+  return lines.join("\n");
+}
+
+function makeErrorResult(
+  toolName: string,
+  payload: Record<string, unknown> & {
+    error: string;
+    issues?: readonly string[];
+    retryHint?: string;
+  },
+): AgentToolResult<Record<string, unknown>> {
+  return {
+    content: [{ type: "text", text: buildToolErrorText(toolName, payload) }],
+    details: payload,
+    isError: true,
+  } as AgentToolResult<Record<string, unknown>>;
+}
+
+function createVisualizationErrorPayload(error: unknown): {
+  error: string;
+  issues: readonly string[];
+  retryHint: string;
+  retryable: true;
+} {
+  if (error instanceof VisualizationValidationError) {
+    return {
+      error: "Visualization validation failed.",
+      issues: error.issues,
+      retryHint: "Correct the visualization spec and call create_visualization again.",
+      retryable: true,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      error: "Visualization creation failed.",
+      issues: [error.message],
+      retryHint:
+        "Adjust the visualization request and call create_visualization again with a corrected spec.",
+      retryable: true,
+    };
+  }
+
+  return {
+    error: "Visualization creation failed.",
+    issues: [String(error)],
+    retryHint:
+      "Adjust the visualization request and call create_visualization again with a corrected spec.",
+    retryable: true,
   };
 }
 
@@ -268,14 +339,18 @@ export function createWealthTools(
         { additionalProperties: false },
       ),
       async execute(_toolCallId, params) {
-        const artifact = createVisualizationArtifact({
-          altText: params.altText,
-          spec: params.spec,
-          summary: params.summary,
-          ...(params.title ? { title: params.title } : {}),
-          ...(params.warnings ? { warnings: params.warnings } : {}),
-        });
-        return makeResult("create_visualization", artifact as unknown as Record<string, unknown>);
+        try {
+          const artifact = createVisualizationArtifact({
+            altText: params.altText,
+            spec: params.spec,
+            summary: params.summary,
+            ...(params.title ? { title: params.title } : {}),
+            ...(params.warnings ? { warnings: params.warnings } : {}),
+          });
+          return makeResult("create_visualization", artifact as unknown as Record<string, unknown>);
+        } catch (error) {
+          return makeErrorResult("create_visualization", createVisualizationErrorPayload(error));
+        }
       },
     }),
     createReadTool({

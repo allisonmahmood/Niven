@@ -631,11 +631,12 @@ pre,
 }
 
 .visualization-card {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: linear-gradient(180deg, #fbf8f1 0%, #f4efe4 100%);
-  padding: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  padding: 18px;
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .visualization-card.is-pending {
@@ -646,7 +647,7 @@ pre,
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .visualization-header h4 {
@@ -658,15 +659,27 @@ pre,
 .visualization-summary {
   margin: 0;
   color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 72ch;
 }
 
 .visualization-canvas {
   width: 100%;
   min-height: 320px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  border: 1px solid rgba(18, 19, 16, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.6), transparent 42%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.12));
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.12));
+}
+
+.visualization-card[data-chart-type="pie"] .visualization-canvas {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.84), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.08));
 }
 
 .visualization-placeholder {
@@ -765,6 +778,15 @@ pre,
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .visualization-card {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .visualization-summary {
+    max-width: none;
   }
 
   .reasoning-card summary,

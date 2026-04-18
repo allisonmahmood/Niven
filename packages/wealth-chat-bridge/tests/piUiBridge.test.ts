@@ -35,11 +35,14 @@ function createToolResultMessage(options: {
   toolCallId: string;
   toolName: string;
   timestamp: number;
-  details: unknown;
+  content?: unknown[];
+  details?: unknown;
+  isError?: boolean;
 }) {
   return {
-    content: [],
-    details: options.details,
+    content: options.content ?? [],
+    ...(options.details !== undefined ? { details: options.details } : {}),
+    ...(options.isError !== undefined ? { isError: options.isError } : {}),
     role: "toolResult",
     timestamp: options.timestamp,
     toolCallId: options.toolCallId,
@@ -294,6 +297,100 @@ describe("PiUiBridge", () => {
     expect(bridge.getState().toolExecutions["tool-chart-2"]).toMatchObject({
       result: artifact,
       status: "complete",
+      toolName: "create_visualization",
+    });
+  });
+
+  it("preserves structured visualization error details when tool results omit error details", async () => {
+    const fakeSession = createFakeSession();
+    const bridge = createPiUiBridge({
+      session: fakeSession.session,
+      threadId: "thread-visualization-error",
+    });
+
+    await bridge.sendMessage("Show my holdings as a pie chart.");
+
+    const toolTurnAssistant = createAssistantMessage({
+      stopReason: "toolUse",
+      timestamp: 3_000,
+    });
+
+    fakeSession.emit({ type: "agent_start" });
+    fakeSession.emit({ type: "turn_start" });
+    fakeSession.emit({ type: "message_start", message: toolTurnAssistant });
+    fakeSession.emit({
+      type: "message_update",
+      message: toolTurnAssistant,
+      assistantMessageEvent: {
+        contentIndex: 0,
+        partial: createAssistantMessage({
+          content: [
+            {
+              arguments: { title: "Holdings pie" },
+              id: "tool-chart-error",
+              name: "create_visualization",
+              type: "toolCall",
+            },
+          ],
+          stopReason: "toolUse",
+          timestamp: 3_000,
+        }),
+        type: "toolcall_start",
+      },
+    });
+    fakeSession.emit({
+      type: "tool_execution_start",
+      args: { title: "Holdings pie" },
+      toolCallId: "tool-chart-error",
+      toolName: "create_visualization",
+    });
+
+    const errorPayload = {
+      error: "Visualization validation failed.",
+      issues: ["Pie visualizations require spec.labelKey."],
+      retryHint: "Correct the visualization spec and call create_visualization again.",
+      retryable: true,
+    };
+
+    fakeSession.emit({
+      type: "tool_execution_end",
+      isError: true,
+      result: createAgentToolEnvelope(errorPayload),
+      toolCallId: "tool-chart-error",
+      toolName: "create_visualization",
+    });
+    fakeSession.emit({
+      type: "turn_end",
+      message: toolTurnAssistant,
+      toolResults: [
+        createToolResultMessage({
+          content: [
+            {
+              text: "create_visualization failed.\nVisualization validation failed.\nIssues:\n- Pie visualizations require spec.labelKey.",
+              type: "text",
+            },
+          ],
+          isError: true,
+          timestamp: 3_001,
+          toolCallId: "tool-chart-error",
+          toolName: "create_visualization",
+        }),
+      ],
+    });
+
+    const assistant = getLatestAssistant(bridge.getState());
+    expect(assistant.content[0]).toMatchObject({
+      isError: true,
+      result: errorPayload,
+      status: "incomplete",
+      toolCallId: "tool-chart-error",
+      toolName: "create_visualization",
+      type: "tool-call",
+    });
+    expect(bridge.getState().toolExecutions["tool-chart-error"]).toMatchObject({
+      isError: true,
+      result: errorPayload,
+      status: "error",
       toolName: "create_visualization",
     });
   });
