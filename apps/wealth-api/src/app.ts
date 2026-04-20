@@ -30,7 +30,15 @@ async function readJsonBody(request: Request): Promise<unknown> {
     return {};
   }
 
-  return request.json();
+  try {
+    return await request.json();
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new ValidationError("Request body must be valid JSON.");
+    }
+
+    throw error;
+  }
 }
 
 function readSendMessageInput(body: unknown): {
@@ -107,8 +115,13 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
     }
 
     const authorization = context.req.header("authorization");
+    const bearerToken =
+      authorization?.startsWith("Bearer ") === true ? authorization.slice("Bearer ".length) : null;
+    const eventStreamToken = context.req.path.endsWith("/events")
+      ? new URL(context.req.url).searchParams.get("apiToken")
+      : null;
 
-    if (authorization !== `Bearer ${options.apiToken}`) {
+    if (bearerToken !== options.apiToken && eventStreamToken !== options.apiToken) {
       throw new UnauthorizedError("Missing or invalid bearer token.");
     }
 
@@ -290,6 +303,11 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
           listener(`event: state\ndata: ${JSON.stringify({ state })}\n\n`);
         });
       });
+    });
+
+    app.post("/v1/chat/threads/:threadId/dispose", (context) => {
+      chatRegistry.disposeThread(context.req.param("threadId"));
+      return new Response(null, { status: 204 });
     });
 
     app.post("/v1/chat/threads/:threadId/messages", async (context) => {

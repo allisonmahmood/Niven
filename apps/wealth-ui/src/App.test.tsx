@@ -1,5 +1,5 @@
 import type { PiUiState } from "@niven/wealth-chat-bridge/pi-ui";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,6 +24,10 @@ vi.mock("echarts", () => ({
 
 import App from "./App";
 import { useChatStore } from "./chatStore";
+
+const runtimeGlobals = globalThis as typeof globalThis & {
+  __NIVEN_API_TOKEN__?: unknown;
+};
 
 class MockEventSource {
   static instances: MockEventSource[] = [];
@@ -103,7 +107,8 @@ describe("App", () => {
     echartsSpies.resize.mockReset();
     echartsSpies.setOption.mockReset();
     globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
-    globalThis.fetch = vi.fn();
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    delete runtimeGlobals.__NIVEN_API_TOKEN__;
     useChatStore.setState({
       connection: "closed",
       error: null,
@@ -112,6 +117,7 @@ describe("App", () => {
   });
 
   afterEach(() => {
+    delete runtimeGlobals.__NIVEN_API_TOKEN__;
     vi.restoreAllMocks();
   });
 
@@ -126,6 +132,24 @@ describe("App", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(MockEventSource.instances[0]?.url).toBe("/api/v1/chat/threads/thread-1/events");
+  });
+
+  it("threads the API token through bootstrap fetches and the SSE URL", async () => {
+    runtimeGlobals.__NIVEN_API_TOKEN__ = "secret-token";
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ state: createState() }));
+
+    render(<App />);
+
+    expect(await screen.findByText("Opening bell.")).toBeInTheDocument();
+    const [path, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+
+    expect(path).toBe("/api/v1/chat/threads");
+    expect(new Headers((init as RequestInit | undefined)?.headers).get("authorization")).toBe(
+      "Bearer secret-token",
+    );
+    expect(MockEventSource.instances[0]?.url).toBe(
+      "/api/v1/chat/threads/thread-1/events?apiToken=secret-token",
+    );
   });
 
   it("renders markdown formatting for assistant messages inside primitives", async () => {
@@ -326,6 +350,26 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("disposes the active thread when the app unmounts", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ state: createState() }));
+
+    const { unmount } = render(<App />);
+
+    expect(await screen.findByText("Opening bell.")).toBeInTheDocument();
+    unmount();
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        "/api/v1/chat/threads/thread-1/dispose",
+        expect.objectContaining({
+          keepalive: true,
+          method: "POST",
+        }),
+      );
+    });
+  });
+
   it("submits composer text to the thread message endpoint", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse({ state: createState() }))
@@ -362,6 +406,30 @@ describe("App", () => {
           method: "POST",
         }),
       );
+    });
+  });
+
+  it("clears stale transport errors after a successful send", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ state: createState() }))
+      .mockResolvedValueOnce(jsonResponse({ state: createState() }));
+
+    render(<App />);
+
+    expect(await screen.findByText("Opening bell.")).toBeInTheDocument();
+    await act(async () => {
+      useChatStore.getState().setError("Network request failed.");
+    });
+    expect(await screen.findByText("Network request failed.")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    const composer = await screen.findByLabelText("Send a message");
+
+    await user.type(composer, "Retry the request.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Network request failed.")).not.toBeInTheDocument();
     });
   });
 });

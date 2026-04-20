@@ -123,6 +123,7 @@ export function useWealthAssistantRuntime() {
 
       try {
         setState(await cancelThread(threadId));
+        setError(null);
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
       }
@@ -144,6 +145,7 @@ export function useWealthAssistantRuntime() {
             ...(isRunning ? { whileRunning: "steer" as const } : {}),
           }),
         );
+        setError(null);
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
       }

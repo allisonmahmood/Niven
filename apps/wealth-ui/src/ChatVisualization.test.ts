@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createVisualizationArtifact } from "../../../packages/wealth-chat-bridge/src/visualization.ts";
+import {
+  createVisualizationArtifact,
+  type VisualizationArtifact,
+} from "../../../packages/wealth-chat-bridge/src/visualization.ts";
 
 import { buildVisualizationOption } from "./ChatVisualization";
 
@@ -207,5 +210,28 @@ describe("buildVisualizationOption", () => {
     expect(pieSeries.labelLine.show).toBe(false);
     expect(pieSeries.emphasis.label.show).toBe(true);
     expect(pieSeries.emphasis.label.position).toBe("center");
+  });
+
+  it("throws instead of coercing non-numeric scatter x values to zero", () => {
+    const artifact: VisualizationArtifact = {
+      altText: "Scatter chart with invalid x-axis values.",
+      kind: "visualization",
+      renderer: "echarts",
+      spec: {
+        chartType: "scatter",
+        data: [
+          { contribution: 1200, month: "Jan" },
+          { contribution: 1400, month: "Feb" },
+        ],
+        series: [{ dataKey: "contribution", name: "Contribution" }],
+        xKey: "month",
+      },
+      summary: "Invalid scatter x values should fail fast.",
+      version: 1,
+    };
+
+    expect(() => buildVisualizationOption(artifact, 720)).toThrow(
+      /Scatter visualizations require numeric values for xKey "month"\./i,
+    );
   });
 });

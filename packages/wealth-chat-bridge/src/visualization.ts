@@ -104,6 +104,19 @@ function isValueFormat(value: unknown): value is VisualizationValueFormat {
   return value === "currency" || value === "number" || value === "percent";
 }
 
+function toNumericValue(value: VisualizationPrimitive | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function cloneRows(rows: readonly VisualizationDataRow[]): VisualizationDataRow[] {
   return rows.map((row) => ({ ...row }));
 }
@@ -346,6 +359,31 @@ export function validateVisualizationArtifact(value: unknown): VisualizationArti
           );
         }
       });
+    }
+
+    if (rawSpec.chartType === "scatter") {
+      const scatterXKey = isNonEmptyString(rawSpec.xKey) ? rawSpec.xKey : undefined;
+      if (scatterXKey && rows.some((row) => toNumericValue(row[scatterXKey]) === null)) {
+        issues.push(
+          `Scatter visualizations require numeric values for spec.xKey "${scatterXKey}".`,
+        );
+      }
+
+      if (Array.isArray(rawSpec.series)) {
+        rawSpec.series.forEach((series, index) => {
+          const scatterDataKey =
+            isRecord(series) && isNonEmptyString(series.dataKey) ? series.dataKey : undefined;
+          if (!scatterDataKey) {
+            return;
+          }
+
+          if (rows.some((row) => toNumericValue(row[scatterDataKey]) === null)) {
+            issues.push(
+              `Scatter series ${index + 1} dataKey "${scatterDataKey}" must contain numeric values.`,
+            );
+          }
+        });
+      }
     }
   }
 

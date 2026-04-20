@@ -63,6 +63,7 @@ function createThread(
 function createRegistry(thread: WealthChatThread): WealthChatRegistry {
   return {
     createThread: vi.fn(async () => thread),
+    disposeThread: vi.fn(() => true),
     dispose: vi.fn(),
     getThread: vi.fn(() => thread),
   };
@@ -108,6 +109,20 @@ describe("wealth api chat routes", () => {
     await reader.cancel();
   });
 
+  it("accepts the API token in the SSE query string when auth is enabled", async () => {
+    const thread = createThread();
+    const app = createApiApp({
+      apiToken: "secret-token",
+      chatRegistry: createRegistry(thread),
+      service: createService(),
+    });
+
+    const response = await app.request("/v1/chat/threads/thread-1/events?apiToken=secret-token");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+  });
+
   it("returns the current thread state over the state endpoint", async () => {
     const thread = createThread({}, createState({ phase: "running", threadId: "thread-2" }));
     const app = createApiApp({
@@ -149,6 +164,45 @@ describe("wealth api chat routes", () => {
     expect(thread.sendMessage).toHaveBeenCalledWith("Use the safe account.", {
       whileRunning: "followUp",
     });
+  });
+
+  it("returns a validation error for malformed chat message JSON", async () => {
+    const thread = createThread();
+    const app = createApiApp({
+      chatRegistry: createRegistry(thread),
+      service: createService(),
+    });
+
+    const response = await app.request("/v1/chat/threads/thread-1/messages", {
+      body: '{"text":',
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.message).toBe("Request body must be valid JSON.");
+    expect(thread.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("disposes threads through the explicit dispose endpoint", async () => {
+    const thread = createThread();
+    const registry = createRegistry(thread);
+    const app = createApiApp({
+      chatRegistry: registry,
+      service: createService(),
+    });
+
+    const response = await app.request("/v1/chat/threads/thread-1/dispose", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(204);
+    expect(registry.disposeThread).toHaveBeenCalledWith("thread-1");
   });
 
   it("cancels the active run through the thread", async () => {

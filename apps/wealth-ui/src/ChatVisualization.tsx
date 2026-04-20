@@ -54,6 +54,15 @@ function toNumericValue(value: unknown): number | null {
   return null;
 }
 
+function requireNumericValue(value: unknown, message: string): number {
+  const numericValue = toNumericValue(value);
+  if (numericValue === null) {
+    throw new Error(message);
+  }
+
+  return numericValue;
+}
+
 function getVisualizationViewport(chartWidth: number): VisualizationViewport {
   const width =
     Number.isFinite(chartWidth) && chartWidth > 0
@@ -609,8 +618,14 @@ export function buildVisualizationOption(
       chartType === "scatter"
         ? {
             data: rows.map((row) => [
-              toNumericValue(row[xKey]) ?? 0,
-              toNumericValue(row[series.dataKey]),
+              requireNumericValue(
+                row[xKey],
+                `Scatter visualizations require numeric values for xKey "${xKey}".`,
+              ),
+              requireNumericValue(
+                row[series.dataKey],
+                `Scatter visualizations require numeric values for dataKey "${series.dataKey}".`,
+              ),
             ]),
             emphasis: {
               focus: "series" as const,

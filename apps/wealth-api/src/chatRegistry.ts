@@ -12,6 +12,7 @@ import type { SandboxService } from "@niven/wealth-sandbox";
 
 export interface WealthChatRegistry {
   createThread(): Promise<WealthChatThread>;
+  disposeThread(threadId: string): boolean;
   dispose(): void;
   getThread(threadId: string): WealthChatThread;
 }
@@ -20,18 +21,24 @@ export interface CreateWealthChatRegistryOptions {
   readonly authStorage: AuthStorage;
   readonly repoRoot: string;
   readonly service: SandboxService;
+  readonly threadTtlMs?: number;
 }
+
+const DEFAULT_THREAD_TTL_MS = 6 * 60 * 60 * 1000;
 
 export class InMemoryWealthChatRegistry implements WealthChatRegistry {
   private readonly authStorage: AuthStorage;
   private readonly paths: ReturnType<typeof getWealthHarnessPaths>;
   private readonly service: SandboxService;
+  private readonly threadTtlMs: number;
+  private readonly threadTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly threads = new Map<string, WealthChatThread>();
 
   constructor(options: CreateWealthChatRegistryOptions) {
     this.authStorage = options.authStorage;
     this.paths = getWealthHarnessPaths(options.repoRoot);
     this.service = options.service;
+    this.threadTtlMs = options.threadTtlMs ?? DEFAULT_THREAD_TTL_MS;
   }
 
   async createThread(): Promise<WealthChatThread> {
@@ -46,7 +53,9 @@ export class InMemoryWealthChatRegistry implements WealthChatRegistry {
       threadId,
     });
 
-    this.threads.set(thread.getState().threadId, thread);
+    const resolvedThreadId = thread.getState().threadId;
+    this.threads.set(resolvedThreadId, thread);
+    this.scheduleThreadDisposal(resolvedThreadId);
     return thread;
   }
 
@@ -57,15 +66,51 @@ export class InMemoryWealthChatRegistry implements WealthChatRegistry {
       throw new NotFoundError(`Chat thread ${threadId} was not found.`);
     }
 
+    this.scheduleThreadDisposal(threadId);
     return thread;
   }
 
-  dispose(): void {
-    for (const thread of this.threads.values()) {
-      thread.dispose();
+  disposeThread(threadId: string): boolean {
+    const thread = this.threads.get(threadId);
+    this.clearThreadDisposal(threadId);
+
+    if (!thread) {
+      return false;
     }
 
-    this.threads.clear();
+    this.threads.delete(threadId);
+    thread.dispose();
+    return true;
+  }
+
+  dispose(): void {
+    for (const threadId of Array.from(this.threads.keys())) {
+      this.disposeThread(threadId);
+    }
+  }
+
+  private clearThreadDisposal(threadId: string): void {
+    const timeout = this.threadTimeouts.get(threadId);
+    if (!timeout) {
+      return;
+    }
+
+    clearTimeout(timeout);
+    this.threadTimeouts.delete(threadId);
+  }
+
+  private scheduleThreadDisposal(threadId: string): void {
+    if (this.threadTtlMs <= 0) {
+      return;
+    }
+
+    this.clearThreadDisposal(threadId);
+    this.threadTimeouts.set(
+      threadId,
+      setTimeout(() => {
+        this.disposeThread(threadId);
+      }, this.threadTtlMs),
+    );
   }
 }
 

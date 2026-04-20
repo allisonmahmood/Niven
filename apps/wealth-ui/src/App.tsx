@@ -17,7 +17,13 @@ import { startTransition, useEffect } from "react";
 import { isVisualizationArtifact } from "../../../packages/wealth-chat-bridge/src/visualization.ts";
 import { useWealthAssistantRuntime } from "./assistantRuntime";
 import { ChatVisualization } from "./ChatVisualization";
-import { createThread, fetchThreadState, formatTransportError } from "./chatApi";
+import {
+  buildThreadEventsUrl,
+  createThread,
+  disposeThread,
+  fetchThreadState,
+  formatTransportError,
+} from "./chatApi";
 import { useChatStore } from "./chatStore";
 import { MarkdownBlock, normalizeChatMarkdown } from "./MarkdownBlock";
 
@@ -100,10 +106,12 @@ function getPartDefaultOpen(status: string, isError: boolean | undefined): boole
 function useThreadBootstrap(): void {
   useEffect(() => {
     let isActive = true;
+    let activeThreadId: string | null = null;
     let eventSource: EventSource | null = null;
 
     const applyState = (nextState: PiUiState) => {
       const { setError, setState } = useChatStore.getState();
+      activeThreadId = nextState.threadId;
 
       startTransition(() => {
         setState(nextState);
@@ -121,7 +129,7 @@ function useThreadBootstrap(): void {
 
     const openThreadStream = (threadId: string) => {
       eventSource?.close();
-      eventSource = new EventSource(`/api/v1/chat/threads/${threadId}/events`);
+      eventSource = new EventSource(buildThreadEventsUrl(threadId));
 
       eventSource.addEventListener("open", () => {
         if (!isActive) {
@@ -184,6 +192,9 @@ function useThreadBootstrap(): void {
     return () => {
       isActive = false;
       eventSource?.close();
+      if (activeThreadId) {
+        void disposeThread(activeThreadId, { keepalive: true }).catch(() => {});
+      }
       setConnection("closed");
     };
   }, []);

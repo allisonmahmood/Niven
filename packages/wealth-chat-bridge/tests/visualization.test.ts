@@ -83,4 +83,25 @@ describe("visualization artifact", () => {
       }),
     ).toThrow(/exactly one series/i);
   });
+
+  it("rejects scatter charts with non-numeric x values", () => {
+    expect(() =>
+      validateVisualizationArtifact({
+        altText: "Scatter chart of contributions over time.",
+        kind: "visualization",
+        renderer: "echarts",
+        spec: {
+          chartType: "scatter",
+          data: [
+            { contribution: 1200, month: "2026-01-01" },
+            { contribution: 1400, month: "2026-02-01" },
+          ],
+          series: [{ dataKey: "contribution", name: "Contribution" }],
+          xKey: "month",
+        },
+        summary: "Date labels should not be silently coerced onto the y-axis.",
+        version: 1,
+      }),
+    ).toThrow(/numeric values for spec\.xKey "month"/i);
+  });
 });

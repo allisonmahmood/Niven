@@ -920,20 +920,26 @@ export class PiUiBridge {
       const existing = this.state.toolExecutions[toolResult.toolCallId];
       const result =
         normalizeToolResultValue(existing?.result) ?? deriveToolResultPayload(toolResult);
-      const status = toolResult.isError ? "error" : "complete";
+      const isError =
+        toolResult.isError !== undefined
+          ? toolResult.isError
+          : existing?.isError !== undefined
+            ? existing.isError
+            : existing?.status === "error";
+      const status = isError ? "error" : "complete";
 
       this.updateToolExecution(toolResult.toolCallId, {
         toolCallId: toolResult.toolCallId,
         toolName: toolResult.toolName,
         args: existing?.args,
         result,
-        isError: toolResult.isError ?? false,
+        isError,
         status,
       });
       this.updateToolPart(toolResult.toolCallId, (part) => {
         part.result = result;
-        part.isError = toolResult.isError ?? false;
-        part.status = toolResult.isError ? "incomplete" : "complete";
+        part.isError = isError;
+        part.status = isError ? "incomplete" : "complete";
       });
     }
 

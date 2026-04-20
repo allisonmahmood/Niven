@@ -394,4 +394,88 @@ describe("PiUiBridge", () => {
       toolName: "create_visualization",
     });
   });
+
+  it("preserves error status when the final tool result omits isError", async () => {
+    const fakeSession = createFakeSession();
+    const bridge = createPiUiBridge({
+      session: fakeSession.session,
+      threadId: "thread-tool-error-status",
+    });
+
+    await bridge.sendMessage("Transfer $100 to savings.");
+
+    const toolTurnAssistant = createAssistantMessage({
+      stopReason: "toolUse",
+      timestamp: 4_000,
+    });
+    const errorPayload = {
+      error: "Approval missing.",
+      retryable: false,
+    };
+
+    fakeSession.emit({ type: "agent_start" });
+    fakeSession.emit({ type: "turn_start" });
+    fakeSession.emit({ type: "message_start", message: toolTurnAssistant });
+    fakeSession.emit({
+      type: "message_update",
+      message: toolTurnAssistant,
+      assistantMessageEvent: {
+        contentIndex: 0,
+        partial: createAssistantMessage({
+          content: [
+            {
+              arguments: { amount: "100.00" },
+              id: "tool-transfer-1",
+              name: "transfer_cash",
+              type: "toolCall",
+            },
+          ],
+          stopReason: "toolUse",
+          timestamp: 4_000,
+        }),
+        type: "toolcall_start",
+      },
+    });
+    fakeSession.emit({
+      type: "tool_execution_start",
+      args: { amount: "100.00" },
+      toolCallId: "tool-transfer-1",
+      toolName: "transfer_cash",
+    });
+    fakeSession.emit({
+      type: "tool_execution_end",
+      isError: true,
+      result: errorPayload,
+      toolCallId: "tool-transfer-1",
+      toolName: "transfer_cash",
+    });
+    fakeSession.emit({
+      type: "turn_end",
+      message: toolTurnAssistant,
+      toolResults: [
+        createToolResultMessage({
+          details: errorPayload,
+          timestamp: 4_001,
+          toolCallId: "tool-transfer-1",
+          toolName: "transfer_cash",
+        }),
+      ],
+    });
+
+    const assistant = getLatestAssistant(bridge.getState());
+    expect(assistant.content[0]).toMatchObject({
+      isError: true,
+      result: errorPayload,
+      status: "incomplete",
+      toolCallId: "tool-transfer-1",
+      toolName: "transfer_cash",
+      type: "tool-call",
+    });
+    expect(bridge.getState().toolExecutions["tool-transfer-1"]).toMatchObject({
+      isError: true,
+      result: errorPayload,
+      status: "error",
+      toolName: "transfer_cash",
+    });
+  });
 });
