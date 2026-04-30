@@ -1,5 +1,5 @@
 import { type Api, getModels, getProviders, type Model } from "@mariozechner/pi-ai";
-import { SettingsManager } from "@mariozechner/pi-coding-agent";
+import { type ModelRegistry, SettingsManager } from "@mariozechner/pi-coding-agent";
 
 export const DEFAULT_WEALTH_HARNESS_PROVIDER = "openai-codex";
 export const DEFAULT_WEALTH_HARNESS_MODEL = "gpt-5.5";
@@ -56,8 +56,19 @@ export function createWealthHarnessSettingsManager(
   return SettingsManager.inMemory(getWealthHarnessModelSettingsFromEnv(env));
 }
 
-export function resolveWealthHarnessModel(settings: WealthHarnessModelSettings): Model<Api> {
-  if (!getProviders().includes(settings.defaultProvider as never)) {
+export function resolveWealthHarnessModel(
+  settings: WealthHarnessModelSettings,
+  modelRegistry?: ModelRegistry,
+): Model<Api> {
+  const registryModel = modelRegistry?.find(settings.defaultProvider, settings.defaultModel);
+
+  if (registryModel) {
+    return registryModel;
+  }
+
+  const isBuiltInProvider = getProviders().includes(settings.defaultProvider as never);
+
+  if (!isBuiltInProvider) {
     throw new Error(`Invalid NIVEN_HARNESS_PROVIDER "${settings.defaultProvider}".`);
   }
 

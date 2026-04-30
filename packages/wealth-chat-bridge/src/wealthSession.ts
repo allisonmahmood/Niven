@@ -5,6 +5,7 @@ import {
   type AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
+  ModelRegistry,
   type ResourceLoader,
   type SessionManager,
   SettingsManager,
@@ -151,6 +152,7 @@ export interface CreateWealthAgentSessionOptions {
   readonly service: WealthToolService;
   readonly resourceLoader?: ResourceLoader;
   readonly sessionManager: SessionManager;
+  readonly modelRegistry?: ModelRegistry;
   readonly settingsManager?: SettingsManager;
   readonly memoryPath?: string;
   readonly soulPath?: string;
@@ -163,6 +165,7 @@ export interface WealthAgentSessionConfig {
   readonly cwd: string;
   readonly resourceLoader: ResourceLoader;
   readonly sessionManager: SessionManager;
+  readonly modelRegistry: ModelRegistry;
   readonly model?: Model<Api>;
   readonly settingsManager: SettingsManager;
   readonly thinkingLevel?: ThinkingLevel;
@@ -222,6 +225,9 @@ export async function buildWealthAgentSessionConfig(
   options: CreateWealthAgentSessionOptions,
 ): Promise<WealthAgentSessionConfig> {
   const settingsManager = options.settingsManager ?? SettingsManager.inMemory();
+  const modelRegistry =
+    options.modelRegistry ??
+    ModelRegistry.create(options.authStorage, path.join(options.agentDir, "models.json"));
   const resourceLoader =
     options.resourceLoader ??
     createWealthResourceLoader({
@@ -239,7 +245,7 @@ export async function buildWealthAgentSessionConfig(
     NIVEN_HARNESS_PROVIDER: settingsManager.getDefaultProvider(),
     NIVEN_HARNESS_THINKING_LEVEL: settingsManager.getDefaultThinkingLevel(),
   });
-  const model = resolveWealthHarnessModel(modelSettings);
+  const model = resolveWealthHarnessModel(modelSettings, modelRegistry);
 
   return {
     agentDir: options.agentDir,
@@ -253,6 +259,7 @@ export async function buildWealthAgentSessionConfig(
     }),
     cwd: options.cwd,
     ...(model ? { model } : {}),
+    modelRegistry,
     resourceLoader,
     sessionManager: options.sessionManager,
     settingsManager,
