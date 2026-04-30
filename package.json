@@ -16,6 +16,8 @@
     "verify:env": "node --env-file-if-exists=.env scripts/verify-env.mjs",
     "api:dev": "pnpm --filter @niven/wealth-api dev",
     "api:start": "pnpm --filter @niven/wealth-api start",
+    "ui:dev": "pnpm --filter @niven/wealth-ui dev",
+    "ui:build": "pnpm --filter @niven/wealth-ui build",
     "sandbox:bootstrap-user": "pnpm --filter @niven/wealth-api sandbox:bootstrap",
     "sandbox:add-checking": "pnpm --filter @niven/wealth-api sandbox:payday",
     "sandbox:payday": "pnpm --filter @niven/wealth-api sandbox:payday",

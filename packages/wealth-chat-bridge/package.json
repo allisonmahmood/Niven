@@ -1,0 +1,31 @@
+{
+  "name": "@niven/wealth-chat-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./pi-ui": {
+      "types": "./dist/piUiBridge.d.ts",
+      "default": "./dist/piUiBridge.js"
+    },
+    "./visualization": {
+      "types": "./dist/visualization.d.ts",
+      "default": "./dist/visualization.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --build tsconfig.json",
+    "test": "pnpm exec vitest run tests"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "0.65.2",
+    "@mariozechner/pi-coding-agent": "0.65.2",
+    "@niven/wealth-sandbox": "workspace:*"
+  }
+}
