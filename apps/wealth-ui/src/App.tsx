@@ -172,6 +172,7 @@ function useThreadBootstrap(): void {
         const state = await createThread();
 
         if (!isActive) {
+          void disposeThread(state.threadId, { keepalive: true }).catch(() => {});
           return;
         }
 

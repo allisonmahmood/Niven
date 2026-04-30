@@ -370,6 +370,33 @@ describe("App", () => {
     });
   });
 
+  it("disposes a thread created after the app unmounts", async () => {
+    let resolveCreateThread!: (value: Response) => void;
+    const createThreadResponse = new Promise<Response>((resolve) => {
+      resolveCreateThread = resolve;
+    });
+
+    vi.mocked(fetch)
+      .mockReturnValueOnce(createThreadResponse)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { unmount } = render(<App />);
+    unmount();
+
+    resolveCreateThread(jsonResponse({ state: createState() }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        "/api/v1/chat/threads/thread-1/dispose",
+        expect.objectContaining({
+          keepalive: true,
+          method: "POST",
+        }),
+      );
+    });
+  });
+
   it("submits composer text to the thread message endpoint", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse({ state: createState() }))
