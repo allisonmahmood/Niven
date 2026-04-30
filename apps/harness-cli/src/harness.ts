@@ -58,6 +58,8 @@ export type BrowserSpawn = (
 
 export interface HarnessSessionEvent {
   type: string;
+  toolName?: string;
+  args?: unknown;
   assistantMessageEvent?: {
     type: string;
     delta?: string;
@@ -150,6 +152,25 @@ export function formatError(error: unknown): string {
   }
 
   return String(error);
+}
+
+function formatStructuredValue(value: unknown): string {
+  if (value === undefined) {
+    return "";
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatToolExecution(toolName: string | undefined, args: unknown): string {
+  const name = toolName?.trim() || "tool";
+  const formattedArgs = formatStructuredValue(args);
+
+  return formattedArgs ? `${name} ${formattedArgs}` : name;
 }
 
 export function openBrowser(
@@ -284,12 +305,48 @@ export function createHarnessCli(deps: HarnessDeps) {
   ): Promise<void> {
     let streamedOutput = "";
     let wroteStream = false;
+    let thinkingOpen = false;
+
+    function openThinking(): void {
+      if (!thinkingOpen) {
+        deps.stderr.write("[thinking] ");
+        thinkingOpen = true;
+      }
+    }
+
+    function closeThinking(): void {
+      if (thinkingOpen) {
+        deps.stderr.write("\n");
+        thinkingOpen = false;
+      }
+    }
 
     const unsubscribe = session.subscribe((event) => {
-      if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-        wroteStream = true;
-        streamedOutput += event.assistantMessageEvent.delta ?? "";
-        deps.stdout.write(event.assistantMessageEvent.delta ?? "");
+      if (event.type === "message_update") {
+        switch (event.assistantMessageEvent?.type) {
+          case "thinking_start":
+            openThinking();
+            break;
+          case "thinking_delta":
+            openThinking();
+            deps.stderr.write(event.assistantMessageEvent.delta ?? "");
+            break;
+          case "thinking_end":
+            closeThinking();
+            break;
+          case "text_delta":
+            wroteStream = true;
+            streamedOutput += event.assistantMessageEvent.delta ?? "";
+            deps.stdout.write(event.assistantMessageEvent.delta ?? "");
+            break;
+          default:
+            break;
+        }
+      }
+
+      if (event.type === "tool_execution_start") {
+        closeThinking();
+        writeLine(deps.stderr, `[tool] ${formatToolExecution(event.toolName, event.args)}`);
       }
     });
 
@@ -318,6 +375,7 @@ export function createHarnessCli(deps: HarnessDeps) {
         }
       }
     } finally {
+      closeThinking();
       clearExplicitApprovalOverride();
       unsubscribe();
     }
