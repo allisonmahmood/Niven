@@ -37,6 +37,26 @@ describe("wealth harness settings", () => {
     ).toThrow("Invalid NIVEN_HARNESS_THINKING_LEVEL");
   });
 
+  it("rejects unknown providers", () => {
+    expect(() =>
+      resolveWealthHarnessModel(
+        getWealthHarnessModelSettingsFromEnv({
+          NIVEN_HARNESS_PROVIDER: "openai-codexx",
+        }),
+      ),
+    ).toThrow('Invalid NIVEN_HARNESS_PROVIDER "openai-codexx"');
+  });
+
+  it("rejects unknown OpenAI Codex model ids instead of templating typos", () => {
+    expect(() =>
+      resolveWealthHarnessModel(
+        getWealthHarnessModelSettingsFromEnv({
+          NIVEN_HARNESS_MODEL: "gpt-5.5x",
+        }),
+      ),
+    ).toThrow('Invalid NIVEN_HARNESS_MODEL "gpt-5.5x"');
+  });
+
   it("resolves GPT-5.5 against the OpenAI Codex model template", () => {
     const model = resolveWealthHarnessModel(getWealthHarnessModelSettingsFromEnv({}));
 

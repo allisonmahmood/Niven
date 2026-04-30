@@ -56,11 +56,9 @@ export function createWealthHarnessSettingsManager(
   return SettingsManager.inMemory(getWealthHarnessModelSettingsFromEnv(env));
 }
 
-export function resolveWealthHarnessModel(
-  settings: WealthHarnessModelSettings,
-): Model<Api> | undefined {
+export function resolveWealthHarnessModel(settings: WealthHarnessModelSettings): Model<Api> {
   if (!getProviders().includes(settings.defaultProvider as never)) {
-    return undefined;
+    throw new Error(`Invalid NIVEN_HARNESS_PROVIDER "${settings.defaultProvider}".`);
   }
 
   const models = getModels(
@@ -72,14 +70,21 @@ export function resolveWealthHarnessModel(
     return registeredModel;
   }
 
-  if (settings.defaultProvider !== DEFAULT_WEALTH_HARNESS_PROVIDER) {
-    return undefined;
+  if (
+    settings.defaultProvider !== DEFAULT_WEALTH_HARNESS_PROVIDER ||
+    settings.defaultModel !== DEFAULT_WEALTH_HARNESS_MODEL
+  ) {
+    throw new Error(
+      `Invalid NIVEN_HARNESS_MODEL "${settings.defaultModel}" for provider "${settings.defaultProvider}".`,
+    );
   }
 
   const templateModel = models.find((model) => model.id === "gpt-5.4");
 
   if (!templateModel) {
-    return undefined;
+    throw new Error(
+      `Unable to resolve NIVEN_HARNESS_MODEL "${settings.defaultModel}" for provider "${settings.defaultProvider}".`,
+    );
   }
 
   return {
