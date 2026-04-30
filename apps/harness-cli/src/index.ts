@@ -5,9 +5,10 @@ import * as readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import { loginOpenAICodex } from "@mariozechner/pi-ai/oauth";
-import { AuthStorage, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, SessionManager } from "@mariozechner/pi-coding-agent";
 import {
   createWealthAgentSession,
+  createWealthHarnessSettingsManager,
   getWealthHarnessPaths,
   hasWealthMemory,
 } from "@niven/wealth-chat-bridge";
@@ -55,7 +56,7 @@ const app = createHarnessCli({
       memoryPath,
       service: wealthService,
       sessionManager: options.sessionManager as SessionManager,
-      settingsManager: SettingsManager.inMemory(),
+      settingsManager: createWealthHarnessSettingsManager(),
       soulPath,
     });
   },

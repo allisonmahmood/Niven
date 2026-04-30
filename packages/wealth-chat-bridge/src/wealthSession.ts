@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-
+import type { Api, Model } from "@mariozechner/pi-ai";
 import {
   type AuthStorage,
   createAgentSession,
@@ -9,9 +9,17 @@ import {
   type SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
+import {
+  getWealthHarnessModelSettingsFromEnv,
+  resolveWealthHarnessModel,
+} from "./harnessSettings.js";
 import { defaultWealthMemoryPath, loadWealthMemory } from "./memory.js";
 import { DEFAULT_WEALTH_SOUL_FALLBACK } from "./soul.js";
 import type { WealthToolService } from "./wealthService.js";
+
+type HarnessSettings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
+type ThinkingLevel = NonNullable<HarnessSettings["defaultThinkingLevel"]>;
+
 import { createWealthTools } from "./wealthTools.js";
 
 export { DEFAULT_WEALTH_SOUL_FALLBACK } from "./soul.js";
@@ -155,7 +163,9 @@ export interface WealthAgentSessionConfig {
   readonly cwd: string;
   readonly resourceLoader: ResourceLoader;
   readonly sessionManager: SessionManager;
+  readonly model?: Model<Api>;
   readonly settingsManager: SettingsManager;
+  readonly thinkingLevel?: ThinkingLevel;
   readonly tools: [];
 }
 
@@ -224,6 +234,13 @@ export async function buildWealthAgentSessionConfig(
 
   await resourceLoader.reload();
 
+  const modelSettings = getWealthHarnessModelSettingsFromEnv({
+    NIVEN_HARNESS_MODEL: settingsManager.getDefaultModel(),
+    NIVEN_HARNESS_PROVIDER: settingsManager.getDefaultProvider(),
+    NIVEN_HARNESS_THINKING_LEVEL: settingsManager.getDefaultThinkingLevel(),
+  });
+  const model = resolveWealthHarnessModel(modelSettings);
+
   return {
     agentDir: options.agentDir,
     authStorage: options.authStorage,
@@ -235,9 +252,11 @@ export async function buildWealthAgentSessionConfig(
       ...(options.soulPath ? { soulPath: options.soulPath } : {}),
     }),
     cwd: options.cwd,
+    ...(model ? { model } : {}),
     resourceLoader,
     sessionManager: options.sessionManager,
     settingsManager,
+    thinkingLevel: modelSettings.defaultThinkingLevel,
     tools: [],
   };
 }

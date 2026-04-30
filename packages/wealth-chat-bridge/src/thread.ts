@@ -2,9 +2,9 @@ import {
   type AuthStorage,
   SessionManager,
   type SessionManager as SessionManagerType,
-  SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 
+import { createWealthHarnessSettingsManager } from "./harnessSettings.js";
 import { hasWealthMemory } from "./memory.js";
 import {
   createPiUiBridge,
@@ -136,7 +136,7 @@ class WealthChatThreadImpl implements WealthChatThread {
       (async (sessionOptions) => {
         return createWealthAgentSession({
           ...sessionOptions,
-          settingsManager: SettingsManager.inMemory(),
+          settingsManager: createWealthHarnessSettingsManager(),
         }) as Promise<{ session: DisposablePiUiBridgeSession }>;
       });
     this.hasMemory = options.hasMemory ?? hasWealthMemory;
