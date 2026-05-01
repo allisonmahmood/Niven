@@ -1,4 +1,5 @@
 export * from "./approval.js";
+export * from "./harnessSettings.js";
 export * from "./memory.js";
 export * from "./piUiBridge.js";
 export * from "./soul.js";
